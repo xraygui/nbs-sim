@@ -1,29 +1,8 @@
-import toml
+from nbs_core.autoload import simpleResolver
 from copy import deepcopy
-from importlib import import_module
-
-def simpleResolver(fullclassname):
-    """
-    Resolve a full class name to a class object.
-
-    Parameters
-    ----------
-    fullclassname : str
-        The full class name to resolve.
-
-    Returns
-    -------
-    type
-        The class object resolved from the full class name.
-    """
-    class_name = fullclassname.split(".")[-1]
-    module_name = ".".join(fullclassname.split(".")[:-1])
-    module = import_module(module_name)
-    cls = getattr(module, class_name)
-    return cls
 
 
-def createIOCDevice(info, cls=None, parent=None):
+def createIOCDevice(device_key, info, cls=None, parent=None):
     """
     Instantiate a device with given information.
 
@@ -60,27 +39,3 @@ def createIOCDevice(info, cls=None, parent=None):
     if parent is not None:
         parent.pvdb.update(**device.pvdb)
     return device
-
-
-def loadDeviceConfig(filename, namespace=None):
-    """
-    Load device configuration from a file and instantiate devices.
-
-    Parameters
-    ----------
-    filename : str
-        The path to the file containing the device configuration.
-    namespace : dict, optional
-        The namespace to add the instantiated devices to.
-
-    Returns
-    -------
-    dict
-        A dictionary of instantiated devices.
-    """
-    db = loadConfigDB(filename)
-    device_dict = {}
-    for key, info in db.items():
-        device = instantiateDevice(key, info, namespace=namespace)
-        device_dict[key] = device
-    return device_dict

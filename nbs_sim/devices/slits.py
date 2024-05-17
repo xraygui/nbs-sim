@@ -26,12 +26,12 @@ class Slit(FakeMotor):
         value = await self._read()
         await self.transmission.write(value=value)
 
-    def __init__(self, trans_min, trans_max, *args, **kwargs):
+    def __init__(self, *args, trans_min, trans_max, velocity=10, precision=3, user_limits, parent=None, **kwargs):
         """
         trans_min: Minimum opening for slit to transmit beam
         trans_max: Opening where transmission is maximum
         """
-        super().__init__(*args, **kwargs)
+        super().__init__(*args, velocity=velocity, precision=precision, user_limits=user_limits, parent=None)
         self.trans_min = trans_min
         self.trans_max = trans_max
 
