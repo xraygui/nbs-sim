@@ -44,11 +44,8 @@ class Beamline(BeamlineModel, PVGroup):
         self.yspl = UnivariateSpline(data["x"], data["y"], s=0)
         self.refspl = UnivariateSpline(refdata["x"], refdata["y"], s=0)
 
-    def add_to_transmission(self, key):
-        device = self.devices.get(key, None)
-        if device is not None:
-            print(f"Adding {key} to transmission")
-            self.transmission_list.append(device)
+    def add_to_transmission(self, device):
+        self.transmission_list.append(device)
 
     def current_func(self):
         t = time.monotonic() % (300)
@@ -84,14 +81,17 @@ class Beamline(BeamlineModel, PVGroup):
 
     def configure_shutters(self):
         for key, device in self.shutters.items():
+            print(f"Adding {key} to transmission")
             self.add_to_transmission(device)
 
     def configure_apertures(self):
         for key, device in self.apertures.items():
+            print(f"Adding {key} to transmission")
             self.add_to_transmission(device)
 
     def configure_gatevalves(self):
         for key, device in self.gatevalves.items():
+            print(f"Adding {key} to transmission")
             self.add_to_transmission(device)
 
     def configure_detectors(self):
