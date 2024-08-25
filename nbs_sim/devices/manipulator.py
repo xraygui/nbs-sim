@@ -1,7 +1,7 @@
 from caproto.ioc_examples.fake_motor_record import FakeMotor
 from caproto.server import PVGroup, SubGroup
-from sst_base.sampleholder import make_regular_polygon
-from sst_base.geometry.linalg import vec
+from nbs_bl.geometry.frames import make_regular_polygon
+from nbs_bl.geometry.linalg import vec
 import numpy as np
 
 

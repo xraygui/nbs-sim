@@ -2,7 +2,7 @@ from nbs_core.autoload import simpleResolver
 from copy import deepcopy
 
 
-def createIOCDevice(device_key, info, cls=None, parent=None):
+def createIOCDevice(device_key, info, cls=None, parent=None, **kwargs):
     """
     Instantiate a device with given information.
 

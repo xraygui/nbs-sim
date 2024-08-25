@@ -5,7 +5,14 @@ import time
 
 import numpy as np
 from scipy.special import erf
-from caproto.server import PVGroup, SubGroup, ioc_arg_parser, pvproperty, run, PvpropertyDouble
+from caproto.server import (
+    PVGroup,
+    SubGroup,
+    ioc_arg_parser,
+    pvproperty,
+    run,
+    PvpropertyDouble,
+)
 from caproto.ioc_examples.fake_motor_record import FakeMotor
 from caproto import ChannelType
 from os.path import join, dirname
@@ -26,12 +33,28 @@ class Slit(FakeMotor):
         value = await self._read()
         await self.transmission.write(value=value)
 
-    def __init__(self, *args, trans_min, trans_max, velocity=10, precision=3, user_limits, parent=None, **kwargs):
+    def __init__(
+        self,
+        *args,
+        trans_min,
+        trans_max,
+        velocity=10,
+        precision=3,
+        user_limits,
+        parent=None,
+        **kwargs
+    ):
         """
         trans_min: Minimum opening for slit to transmit beam
         trans_max: Opening where transmission is maximum
         """
-        super().__init__(*args, velocity=velocity, precision=precision, user_limits=user_limits, parent=None)
+        super().__init__(
+            *args,
+            velocity=velocity,
+            precision=precision,
+            user_limits=user_limits,
+            parent=None
+        )
         self.trans_min = trans_min
         self.trans_max = trans_max
 
@@ -42,4 +65,4 @@ class Slit(FakeMotor):
         if rbv > self.trans_max:
             return 1
         else:
-            return (rbv - self.trans_min)/(self.trans_max - self.trans_min)
+            return (rbv - self.trans_min) / (self.trans_max - self.trans_min)

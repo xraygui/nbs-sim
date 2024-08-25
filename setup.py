@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 setup(
     author="Charles Titus",
     author_email="charles.titus@nist.gov",
-    install_requires=["caproto", "asyncio", "scipy", "sst_base", "numpy", "nbs_core"],
+    install_requires=["caproto", "asyncio", "scipy", "nbs-bl", "numpy", "nbs-core"],
     name="nbs-sim",
     packages=find_packages(),
     package_data={"nbs-sim": ["*.npz"]},
