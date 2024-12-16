@@ -10,10 +10,10 @@ class Manipulator(PVGroup):
     A fake 4-axis manipulator
     """
 
-    x = SubGroup(FakeMotor, velocity=2, precision=3, prefix="SampX}}Mtr")
-    y = SubGroup(FakeMotor, velocity=2, precision=3, prefix="SampY}}Mtr")
-    z = SubGroup(FakeMotor, velocity=2, precision=3, prefix="SampZ}}Mtr")
-    r = SubGroup(FakeMotor, velocity=2, precision=3, prefix="SampTh}}Mtr")
+    x = SubGroup(FakeMotor, velocity=2, precision=3, prefix="SampX}Mtr")
+    y = SubGroup(FakeMotor, velocity=2, precision=3, prefix="SampY}Mtr")
+    z = SubGroup(FakeMotor, velocity=2, precision=3, prefix="SampZ}Mtr")
+    r = SubGroup(FakeMotor, velocity=2, precision=3, prefix="SampTh}Mtr")
 
     geometry = make_regular_polygon(24.5, 215, 4)
     origin = vec(0, 0, 464, 0)

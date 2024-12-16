@@ -35,6 +35,7 @@ def createIOCDevice(device_key, info, cls=None, parent=None, **kwargs):
         device_info.pop(key)
 
     prefix = device_info.pop("prefix", "")
+    print(f"Loading {prefix}")
     device = cls(prefix, parent=parent, **device_info)
     if parent is not None:
         parent.pvdb.update(**device.pvdb)

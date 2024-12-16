@@ -98,7 +98,7 @@ class SST1MonoMotor(PVGroup):
 
 class SST1Mono(PVGroup):
     mono = SubGroup(SST1MonoMotor, prefix="")
-    gratingx = SubGroup(SST1MonoGrating, prefix="GrtX}}Mtr")
+    gratingx = SubGroup(SST1MonoGrating, prefix="GrtX}Mtr")
     cff = pvproperty(name=":CFF_SP", value=1.55, dtype=PvpropertyDouble)
 
     def __init__(self, prefix, parent=None, **kwargs):
