@@ -3,13 +3,12 @@ import functools
 from caproto.server import (
     PVGroup,
     SubGroup,
-    ioc_arg_parser,
     pvproperty,
-    run,
     PvpropertyDouble,
 )
-from caproto.ioc_examples.fake_motor_record import FakeMotor
-from caproto import ChannelType, SkipWrite
+from .sst1_energy import SST1Mono
+from .hax_dcm import DCM
+from .motors import FakeUndulatorMotor, FakePositioner
 import contextvars
 
 internal_process = contextvars.ContextVar("internal_process", default=False)
@@ -29,91 +28,37 @@ def no_reentry(func):
     return inner
 
 
-class SST1MonoGrating(PVGroup):
-    setpoint = pvproperty(
-        name="_TYPE_SP",
-        record="mbbo",
-        value="1200l/mm",
-        enum_strings=[
-            "ZERO",
-            "ONE",
-            "250l/mm",
-            "THREE",
-            "FOUR",
-            "FIVE",
-            "SIX",
-            "SEVEN",
-            "EIGHT",
-            "1200l/mm",
-        ],
-        dtype=ChannelType.ENUM,
+class SSTEPU(PVGroup):
+    """Simulated SST EPU device."""
+
+    gap = SubGroup(
+        FakeUndulatorMotor, prefix="Gap}-Mtr", velocity=5000.0, value=14000.0
     )
-    readback = pvproperty(
-        name="_TYPE_MON",
-        record="mbbo",
-        value="1200l/mm",
-        enum_strings=["1200l/mm", "250l/mm"],
-        dtype=ChannelType.ENUM,
-        read_only=True,
+    phase = SubGroup(
+        FakeUndulatorMotor, prefix="Phase}-Mtr", velocity=5000.0, value=0.0
     )
-    actuate = pvproperty(name="_DCPL_CALC.PROC")
-    enable = pvproperty(name="_ENA_CMD.PROC")
-    kill = pvproperty(name="_KILL_CMD.PROC")
-    home = pvproperty(name="_HOME_CMD.PROC")
-    clear = pvproperty(name="_ENC_LSS_CLR_CMD.PROC")
-    done = pvproperty(name="_AXIS_STS")
-
-    def __init__(self, prefix, delay=0.5, parent=None, **kwargs):
-        super().__init__(prefix, parent=parent)
-        self._delay = delay
-
-    @actuate.putter
-    async def actuate(self, instance, value):
-        await self.done.write(0)
-        await asyncio.sleep(self._delay)
-        sp = self.setpoint.value
-        await self.readback.write(value=sp)
-        await self.done.write(1)
-
-
-class SST1MonoMotor(PVGroup):
-    setpoint = pvproperty(name=":ENERGY_SP", value=500.0)
-    readback = pvproperty(name=":ENERGY_MON", value=500.0, read_only=True)
-    velocity = pvproperty(name=":ENERGY_VELO", value=200.0)
-    done = pvproperty(name=":ERDY_STS")
-
-    def __init__(self, prefix, delay=0.1, parent=None, **kwargs):
-        super().__init__(prefix, parent=parent)
-        self._delay = delay
-
-    @setpoint.putter
-    async def setpoint(self, instance, value):
-        await self.done.write(0)
-        await asyncio.sleep(self._delay)
-        await instance.write(value, verify_value=False)
-        await self.readback.write(value)
-        await self.done.write(1)
-        return SkipWrite
-
-
-class SST1Mono(PVGroup):
-    mono = SubGroup(SST1MonoMotor, prefix="")
-    gratingx = SubGroup(SST1MonoGrating, prefix="GrtX}Mtr")
-    cff = pvproperty(name=":CFF_SP", value=1.55, dtype=PvpropertyDouble)
-
-    def __init__(self, prefix, parent=None, **kwargs):
-        super().__init__(prefix, parent=parent)
+    mode = SubGroup(
+        FakePositioner, prefix="Phase}Phs:Mode", value=2
+    )  # 2 is linear horizontal
 
 
 class SST1Energy(PVGroup):
-    mono = SubGroup(SST1Mono, prefix="MonoMtr")
-    gap = SubGroup(FakeMotor, prefix="GapMtr", velocity=5000.0, precision=3)
-    phase = SubGroup(FakeMotor, prefix="PhaseMtr", velocity=5000.0, precision=3)
-    mode = SubGroup(FakeMotor, prefix="ModeMtr", velocity=100.0, precision=3)
+    """Simulated SST1 Energy System."""
 
-    def __init__(self, prefix, parent=None, **kwargs):
-        super().__init__(prefix, parent=parent)
+    mono = SubGroup(SST1Mono, prefix="XF:07ID1-OP{Mono:PGM1-Ax:")
+    epu60 = SubGroup(SSTEPU, prefix="SR:C07-ID:G1A{SST1:1-Ax:")
 
     @property
     def value(self):
-        return self.mono.mono.readback.value
+        return self.mono.readback.value
+
+
+class HAXEnergy(PVGroup):
+    """Simulated HAX Energy System."""
+
+    u42 = SubGroup(SSTEPU, prefix="SR:C07-ID:G1A{SST2:1-Ax:")
+    mono = SubGroup(DCM, prefix="XF:07ID6-OP{Mono:DCM1-Ax:")
+
+    @property
+    def value(self):
+        return self.mono.readback.value
