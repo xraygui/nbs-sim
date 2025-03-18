@@ -1,19 +1,14 @@
-from caproto.ioc_examples.fake_motor_record import FakeMotor
+from .motors import FakeMotor, FakeFMBOMotor
 from caproto.server import PVGroup, SubGroup
 from nbs_bl.geometry.frames import make_regular_polygon
 from nbs_bl.geometry.linalg import vec
 import numpy as np
 
 
-class Manipulator(PVGroup):
+class ManipulatorBase(PVGroup):
     """
     A fake 4-axis manipulator
     """
-
-    x = SubGroup(FakeMotor, velocity=2, precision=3, prefix="SampX}Mtr")
-    y = SubGroup(FakeMotor, velocity=2, precision=3, prefix="SampY}Mtr")
-    z = SubGroup(FakeMotor, velocity=2, precision=3, prefix="SampZ}Mtr")
-    r = SubGroup(FakeMotor, velocity=2, precision=3, prefix="SampTh}Mtr")
 
     geometry = make_regular_polygon(24.5, 215, 4)
     origin = vec(0, 0, 464, 0)
@@ -33,12 +28,26 @@ class Manipulator(PVGroup):
         super().__init__(prefix, parent=parent)
 
 
+class Manipulator(ManipulatorBase):
+    x = SubGroup(FakeMotor, velocity=2, precision=3, prefix="SampX}Mtr")
+    y = SubGroup(FakeMotor, velocity=2, precision=3, prefix="SampY}Mtr")
+    z = SubGroup(FakeMotor, velocity=2, precision=3, prefix="SampZ}Mtr")
+    r = SubGroup(FakeMotor, velocity=2, precision=3, prefix="SampTh}Mtr")
+
+
+class ManipulatorRSOXS(ManipulatorBase):
+    x = SubGroup(FakeFMBOMotor, velocity=2, precision=3, prefix="X}Mtr")
+    y = SubGroup(FakeFMBOMotor, velocity=2, precision=3, prefix="Y}Mtr")
+    z = SubGroup(FakeFMBOMotor, velocity=2, precision=3, prefix="Z}Mtr")
+    r = SubGroup(FakeFMBOMotor, velocity=2, precision=3, prefix="Yaw}Mtr")
+
+
 class MultiMesh(PVGroup):
     """
     A fake 1-axis manipulator
     """
 
-    x = SubGroup(FakeMotor, velocity=10.0, precision=3, prefix="MMesh}}Mtr")
+    x = SubGroup(FakeMotor, velocity=10.0, precision=3, prefix="MMesh}Mtr")
 
     def __init__(self, prefix, parent=None, **kwargs):
         super().__init__(prefix, parent=parent)

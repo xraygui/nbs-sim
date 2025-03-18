@@ -1,7 +1,7 @@
 import asyncio
 from caproto.server import PVGroup, SubGroup, pvproperty, PvpropertyDouble
 from caproto import ChannelType
-from .motors import FakeMotor
+from .motors import FakeMotor, FakeFMBOMotor
 
 
 class SST1TypeBase(PVGroup):
@@ -83,8 +83,8 @@ class SST1MonoMirror(SST1TypeBase):
 class SST1Mono(PVGroup):
     """Simulated SST1 Monochromator."""
 
-    grating = SubGroup(FakeMotor, prefix="GrtP}Mtr", value=0)
-    mirror2 = SubGroup(FakeMotor, prefix="MirP}Mtr", value=0)
+    grating = SubGroup(FakeFMBOMotor, prefix="GrtP}Mtr", value=0)
+    mirror2 = SubGroup(FakeFMBOMotor, prefix="MirP}Mtr", value=0)
     gratingx = SubGroup(SST1MonoGrating, prefix="GrtX}Mtr")
     mirror2x = SubGroup(SST1MonoMirror, prefix="MirX}Mtr")
     cff = pvproperty(name=":CFF_SP", value=1.55, dtype=PvpropertyDouble)
@@ -108,6 +108,7 @@ class SST1Mono(PVGroup):
         self._delay = delay
         self._scanning = False
         self._scan_task = None
+        self._flymove_task = None
 
     @setpoint.putter
     async def setpoint(self, instance, value):
@@ -178,3 +179,155 @@ class SST1Mono(PVGroup):
         except asyncio.CancelledError:
             self._scanning = False
             await self.done.write(1)
+
+
+class SST1FlyControl(PVGroup):
+    # Add FlyControl PVs
+    undulator_dance_enable = pvproperty(
+        name="MACROControl-SP",
+        value=0,
+        dtype=PvpropertyDouble,
+    )
+    undulator_dance_readback = pvproperty(
+        name="MACROControl-RB",
+        value=0,
+        dtype=PvpropertyDouble,
+        read_only=True,
+    )
+
+    flymove_stop_ev = pvproperty(
+        name="FlyMove-Mtr-SP",
+        value=500.0,
+        dtype=PvpropertyDouble,
+    )
+    flymove_speed_ev = pvproperty(
+        name="FlyMove-Speed-SP",
+        value=5.0,
+        dtype=PvpropertyDouble,
+    )
+    flymove_start = pvproperty(name="FlyMove-Mtr-Go.PROC", value=0)
+    flymove_stop = pvproperty(name="FlyMove-Mtr.STOP", value=0)
+    flymove_moving = pvproperty(name="FlyMove-Mtr.MOVN", value=0)
+
+    scan_start_ev = pvproperty(
+        name="EScanFirst-SP",
+        value=500.0,
+        dtype=PvpropertyDouble,
+    )
+    scan_stop_ev = pvproperty(
+        name="EScanLast-SP",
+        value=1000.0,
+        dtype=PvpropertyDouble,
+    )
+    scan_speed_ev = pvproperty(
+        name="EScan-Speed-SP",
+        value=5.0,
+        dtype=PvpropertyDouble,
+    )
+    scan_trigger_width = pvproperty(
+        name="EScanTriggerWidth-SP",
+        value=0.1,
+        dtype=PvpropertyDouble,
+    )
+    scan_trigger_width_rb = pvproperty(
+        name="EScanTriggerWidth-RB",
+        value=0.1,
+        dtype=PvpropertyDouble,
+        read_only=True,
+    )
+    scan_trigger_n = pvproperty(
+        name="EScanNTriggers-SP",
+        value=10,
+        dtype=PvpropertyDouble,
+    )
+    scan_trigger_n_rb = pvproperty(
+        name="EScanNTriggers-RB",
+        value=10,
+        dtype=PvpropertyDouble,
+        read_only=True,
+    )
+    scan_start_go = pvproperty(name="FlyScan-Mtr-Go.PROC", value=0)
+    scanning = pvproperty(name="FlyScan-Mtr.MOVN", value=0)
+
+    @undulator_dance_enable.putter
+    async def undulator_dance_enable(self, instance, value):
+        """Handle undulator dance enable."""
+        await self.undulator_dance_readback.write(value)
+        if value == 1:
+            # Simulate enabling by setting bit 2 (value 4) after delay
+            await asyncio.sleep(self._delay)
+            await self.undulator_dance_readback.write(4)
+
+    @flymove_start.putter
+    async def flymove_start(self, instance, value):
+        """Handle flymove start command."""
+        if value == 1 and not self._scanning:
+            await self.flymove_moving.write(1)
+            target = self.flymove_stop_ev.value
+            speed = self.flymove_speed_ev.value
+
+            self._flymove_task = asyncio.create_task(self._run_move(target, speed))
+
+    async def _run_move(self, target, speed):
+        """Run a fly move to target position."""
+        try:
+            current = self.readback.value
+
+            while abs(current - target) > 0.01:
+                direction = 1 if target > current else -1
+                step = direction * speed * 0.1
+
+                if abs(step) > abs(target - current):
+                    current = target
+                else:
+                    current += step
+
+                await self.readback.write(current)
+                await asyncio.sleep(0.1)
+
+                if self.flymove_stop.value:
+                    break
+
+            await self.flymove_moving.write(0)
+
+        except asyncio.CancelledError:
+            await self.flymove_moving.write(0)
+
+    @scan_start_go.putter
+    async def scan_start_go(self, instance, value):
+        """Handle scan start command."""
+        if value == 1 and not self._scanning:
+            self._scanning = True
+            await self.scanning.write(1)
+
+            start = self.scan_start_ev.value
+            stop = self.scan_stop_ev.value
+            speed = self.scan_speed_ev.value
+
+            self._scan_task = asyncio.create_task(self._run_scan(start, stop, speed))
+
+    async def _run_scan(self, start, stop, speed):
+        """Run the energy scan."""
+        try:
+            current = start
+
+            while self._scanning and current <= stop:
+                await self.readback.write(current)
+                await asyncio.sleep(0.1)
+                current += speed * 0.1
+
+            self._scanning = False
+            await self.scanning.write(0)
+
+        except asyncio.CancelledError:
+            self._scanning = False
+            await self.scanning.write(0)
+
+    # Add trigger width and count update methods
+    @scan_trigger_width.putter
+    async def scan_trigger_width(self, instance, value):
+        await self.scan_trigger_width_rb.write(value)
+
+    @scan_trigger_n.putter
+    async def scan_trigger_n(self, instance, value):
+        await self.scan_trigger_n_rb.write(value)

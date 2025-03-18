@@ -62,6 +62,9 @@ class DetectorKindMixin:
             overlap = self.parent.distance_func(transmission=True)
             intensity = self.parent.intensity_func()
             return intensity * overlap
+        else:
+            intensity = self.parent.intensity_func()
+            return intensity
 
 
 def make_detector_class(pv_name="Intensity"):

@@ -1,41 +1,16 @@
-import textwrap
-import time
-
+from caproto.server import PVGroup, SubGroup, pvproperty
+from .motors import FakeFMBOMotor, FakeMotor
 import numpy as np
-from scipy.special import erf
-from caproto.server import (
-    PVGroup,
-    SubGroup,
-    ioc_arg_parser,
-    pvproperty,
-    run,
-    PvpropertyDouble,
-)
-from caproto.ioc_examples.fake_motor_record import FakeMotor
-from caproto import ChannelType
-from os.path import join, dirname
 
 
-class QuadSlits(PVGroup):
+class BaseQuadSlits(PVGroup):
     """
-    A simulation of SST 4-blade slits.
+    Base class for 4-blade slits simulation.
 
-    This simulates the following motors:
-    - Top blade
-    - Bottom blade
-    - Inboard blade
-    - Outboard blade
-
-    And calculates transmission based on the total opening area.
+    This provides common functionality for calculating transmission
+    based on blade positions.
     """
 
-    # The real (or physical) positioners
-    top = SubGroup(FakeMotor, velocity=2, precision=3, prefix="T}Mtr")
-    bottom = SubGroup(FakeMotor, velocity=2, precision=3, prefix="B}Mtr")
-    inboard = SubGroup(FakeMotor, velocity=2, precision=3, prefix="I}Mtr")
-    outboard = SubGroup(FakeMotor, velocity=2, precision=3, prefix="O}Mtr")
-
-    # Transmission through the slits
     transmission = pvproperty(
         value=0.0,
         dtype=float,
@@ -74,7 +49,9 @@ class QuadSlits(PVGroup):
                 return 1.0
             else:
                 # Linear ramp between min and max
-                return (size - self.min_opening) / (self.max_opening - self.min_opening)
+                numerator = size - self.min_opening
+                denominator = self.max_opening - self.min_opening
+                return numerator / denominator
 
         v_trans = calc_transmission(v_size)
         h_trans = calc_transmission(h_size)
@@ -82,6 +59,44 @@ class QuadSlits(PVGroup):
         # Total transmission is product of both directions
         total_trans = v_trans * h_trans
         await instance.write(value=total_trans)
+
+
+class QuadSlits(BaseQuadSlits):
+    """
+    A simulation of SST 4-blade slits using standard FakeMotors.
+
+    This simulates the following motors:
+    - Top blade
+    - Bottom blade
+    - Inboard blade
+    - Outboard blade
+    """
+
+    # The real (or physical) positioners
+    top = SubGroup(FakeMotor, velocity=2, precision=3, prefix="T}Mtr")
+    bottom = SubGroup(FakeMotor, velocity=2, precision=3, prefix="B}Mtr")
+    inboard = SubGroup(FakeMotor, velocity=2, precision=3, prefix="I}Mtr")
+    outboard = SubGroup(FakeMotor, velocity=2, precision=3, prefix="O}Mtr")
+
+
+class FMBOQuadSlits(BaseQuadSlits):
+    """
+    A simulation of SST 4-blade slits using FMBO motors.
+
+    This simulates the following motors:
+    - Top blade
+    - Bottom blade
+    - Inboard blade
+    - Outboard blade
+
+    Uses FakeFMBOMotor which includes additional status signals.
+    """
+
+    # The real (or physical) positioners with FMBO interface
+    top = SubGroup(FakeFMBOMotor, velocity=2, precision=3, prefix="T}Mtr")
+    bottom = SubGroup(FakeFMBOMotor, velocity=2, precision=3, prefix="B}Mtr")
+    inboard = SubGroup(FakeFMBOMotor, velocity=2, precision=3, prefix="I}Mtr")
+    outboard = SubGroup(FakeFMBOMotor, velocity=2, precision=3, prefix="O}Mtr")
 
 
 class Slit(FakeMotor):
@@ -132,3 +147,84 @@ class Slit(FakeMotor):
             return 1
         else:
             return (rbv - self.trans_min) / (self.trans_max - self.trans_min)
+
+
+def QuadSlitsLimitFactory(*args, limits=None, **kwargs):
+    """Factory function to create a simulated QuadSlits PVGroup.
+
+    Parameters
+    ----------
+    limits : dict, optional
+        Dictionary of limits for pseudo motors. Format:
+        {'vsize': (min, max), 'hsize': (min, max),
+         'vcenter': (min, max), 'hcenter': (min, max)}
+
+    Returns
+    -------
+    QuadSlitsSim
+        PVGroup class configured with the specified limits
+    """
+
+    _limits = {
+        "vsize": (-1, 20),
+        "hsize": (-1, 20),
+        "vcenter": (-10, 10),
+        "hcenter": (-10, 10),
+    }
+    if limits is not None:
+        _limits.update(limits)
+
+    class QuadSlitsSim(BaseQuadSlits):
+        """Simulated quad slits with real and pseudo motors.
+
+        Real motors are top, bottom, inboard, outboard.
+        Pseudo motors are vsize, vcenter, hsize, hcenter.
+        """
+
+        # Calculate real motor limits from pseudo limits
+        # For vertical motors:
+        # vcenter + vsize/2 = top
+        # vcenter - vsize/2 = bottom
+        # So top/bottom range is vcenter ± vsize/2
+        v_range = (
+            _limits["vcenter"][0] - _limits["vsize"][1] / 2,
+            _limits["vcenter"][1] + _limits["vsize"][1] / 2,
+        )
+
+        # Similarly for horizontal motors
+        h_range = (
+            _limits["hcenter"][0] - _limits["hsize"][1] / 2,
+            _limits["hcenter"][1] + _limits["hsize"][1] / 2,
+        )
+
+        # The real (or physical) positioners
+        top = SubGroup(
+            FakeMotor,
+            velocity=2,
+            precision=3,
+            user_limits=v_range,
+            prefix="T}Mtr",
+        )
+        bottom = SubGroup(
+            FakeMotor,
+            velocity=2,
+            precision=3,
+            user_limits=v_range,
+            prefix="B}Mtr",
+        )
+        inboard = SubGroup(
+            FakeMotor,
+            velocity=2,
+            precision=3,
+            user_limits=h_range,
+            prefix="I}Mtr",
+        )
+        outboard = SubGroup(
+            FakeMotor,
+            velocity=2,
+            precision=3,
+            user_limits=h_range,
+            prefix="O}Mtr",
+        )
+
+    return QuadSlitsSim(*args, **kwargs)

@@ -2,6 +2,7 @@ from caproto.server import PVGroup, pvproperty
 from caproto.ioc_examples.fake_motor_record import motor_record_simulator
 import asyncio
 import numpy as np
+from caproto import ChannelType
 
 
 class FakeMotor(PVGroup):
@@ -183,3 +184,117 @@ class DelayedFakePositioner(FakePositioner):
             self._move_to(self._pending_setpoint, velocity=self.velocity)
         )
         return self._move_task
+
+
+class FakeFMBOMotor(FakeMotor):
+    """
+    Simulated FMBO Motor with additional status signals.
+
+    Parameters
+    ----------
+    prefix : str
+        The PV prefix for this motor
+    velocity : float, optional
+        Speed of simulated motion in units/s
+    precision : int, optional
+        Number of decimal places to display
+    acceleration : float, optional
+        Acceleration in units/s^2
+    resolution : float, optional
+        Motor resolution
+    user_limits : tuple, optional
+        (low_limit, high_limit) for motion
+    tick_rate_hz : float, optional
+        Update rate for the simulation
+    value : float, optional
+        Initial position value
+    """
+
+    # Additional control signals
+    resolution = pvproperty(name=".MRES", value=0.0, doc="Motor Step Size (EGU)")
+    encoder = pvproperty(name=".REP", value=0, doc="Raw Encoder Position")
+    clr_enc_lss = pvproperty(
+        name="_ENC_LSS_CLR_CMD.PROC", value=0, doc="Clear encoder loss command"
+    )
+    home_cmd = pvproperty(name="_HOME_CMD.PROC", value=0, doc="Home command")
+    enable = pvproperty(name="_ENA_CMD.PROC", value=0, doc="Enable command")
+    kill = pvproperty(name="_KILL_CMD.PROC", value=0, doc="Kill command")
+
+    # Status signals with ai record type for DESC field
+    mtact = pvproperty(name="_MTACT_STS", value=0, record="ai", doc="Motor Active")
+    mlim = pvproperty(name="_MLIM_STS", value=0, record="ai", doc="Minus Limit")
+    plim = pvproperty(name="_PLIM_STS", value=0, record="ai", doc="Plus Limit")
+    ampen = pvproperty(name="_AMPEN_STS", value=0, record="ai", doc="Amplifier Enabled")
+    inpos = pvproperty(name="_INPOS_STS", value=0, record="ai", doc="In Position")
+    enc_lss = pvproperty(name="_ENC_LSS_STS", value=0, record="ai", doc="Encoder Loss")
+    loopm = pvproperty(name="_LOOPM_STS", value=0, record="ai", doc="Loop Mode")
+    tiact = pvproperty(name="_TIACT_STS", value=0, record="ai", doc="Time Active")
+    intmo = pvproperty(
+        name="_INTMO_STS", value=0, record="ai", doc="Interpolation Mode"
+    )
+    dwpro = pvproperty(name="_DWPRO_STS", value=0, record="ai", doc="Dwell Process")
+    daerr = pvproperty(name="_DAERR_STS", value=0, record="ai", doc="DAC Error")
+    dvzer = pvproperty(name="_DVZER_STS", value=0, record="ai", doc="Drive Zero")
+    abdec = pvproperty(
+        name="_ABDEC_STS", value=0, record="ai", doc="Abort Deceleration"
+    )
+    uwpen = pvproperty(
+        name="_UWPEN_STS", value=0, record="ai", doc="User Write Pending"
+    )
+    uwsen = pvproperty(name="_UWSEN_STS", value=0, record="ai", doc="User Write Sent")
+    errtg = pvproperty(name="_ERRTG_STS", value=0, record="ai", doc="Error Trigger")
+    swpoc = pvproperty(
+        name="_SWPOC_STS", value=0, record="ai", doc="Software Position Compare"
+    )
+    asscs = pvproperty(name="_ASSCS_STS", value=0, record="ai", doc="Axis State Status")
+    frpos = pvproperty(
+        name="_FRPOS_STS", value=0, record="ai", doc="Following Error Position"
+    )
+    hsrch = pvproperty(name="_HSRCH_STS", value=0, record="ai", doc="Home Search")
+    sodpl = pvproperty(
+        name="_SODPL_STS", value=0, record="ai", doc="Software Overtravel Disable"
+    )
+    sopl = pvproperty(
+        name="_SOPL_STS", value=0, record="ai", doc="Software Position Limit"
+    )
+    hocpl = pvproperty(name="_HOCPL_STS", value=0, record="ai", doc="Home Complete")
+    phsra = pvproperty(
+        name="_PHSRA_STS", value=0, record="ai", doc="Phase Reference Active"
+    )
+    prefe = pvproperty(
+        name="_PREFE_STS", value=0, record="ai", doc="Position Reference Error"
+    )
+    trmov = pvproperty(name="_TRMOV_STS", value=0, record="ai", doc="Trigger Move")
+    iffe = pvproperty(name="_IFFE_STS", value=0, record="ai", doc="In Following Error")
+    amfae = pvproperty(
+        name="_AMFAE_STS", value=0, record="ai", doc="Amplifier Fault Error"
+    )
+    amfe = pvproperty(name="_AMFE_STS", value=0, record="ai", doc="Amplifier Fault")
+    fafoe = pvproperty(
+        name="_FAFOE_STS", value=0, record="ai", doc="Fatal Following Error"
+    )
+    wfoer = pvproperty(
+        name="_WFOER_STS", value=0, record="ai", doc="Warning Following Error"
+    )
+
+    def __init__(self, prefix, **kwargs):
+        super().__init__(prefix, **kwargs)
+
+    @home_cmd.putter
+    async def home_cmd(self, instance, value):
+        """Simulate homing command."""
+        if value == 1:
+            # Reset to 0 after brief delay
+            await asyncio.sleep(0.1)
+            await instance.write(0)
+            await self.motor.write(0)
+        return value
+
+    @clr_enc_lss.putter
+    async def clr_enc_lss(self, instance, value):
+        """Simulate encoder loss clear command."""
+        if value == 1:
+            await self.enc_lss.write(0)
+            await asyncio.sleep(0.1)
+            await instance.write(0)
+        return value
