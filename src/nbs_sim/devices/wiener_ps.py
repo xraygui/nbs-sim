@@ -4,8 +4,8 @@ from caproto.server import PVGroup, SubGroup, pvproperty
 import numpy as np
 
 
-# -LV-u0} to -LV-u7}
-# -HV-u300} to -HV-u307}
+# -LV:u0} to -LV:u7}
+# -HV:u300} to -HV:u307}
 class WienerPSChannel(FakePositioner):
     """
     Simulated Wiener Power Supply Channel.
@@ -102,69 +102,69 @@ class WienerPS(PVGroup):
 
     lv_0 = SubGroup(
         WienerPSChannel,
-        prefix="-LV-u0}",
+        prefix="-LV:u0}",
         low_limit=0,
         high_limit=300,
         pos_polarity=False,
     )
     lv_1 = SubGroup(
         WienerPSChannel,
-        prefix="-LV-u1}",
+        prefix="-LV:u1}",
         low_limit=0,
         high_limit=300,
         pos_polarity=False,
     )
     lv_2 = SubGroup(
         WienerPSChannel,
-        prefix="-LV-u2}",
+        prefix="-LV:u2}",
         low_limit=0,
         high_limit=300,
         pos_polarity=False,
     )
     lv_3 = SubGroup(
         WienerPSChannel,
-        prefix="-LV-u3}",
+        prefix="-LV:u3}",
         low_limit=0,
         high_limit=300,
         pos_polarity=False,
     )
     lv_4 = SubGroup(
         WienerPSChannel,
-        prefix="-LV-u4}",
+        prefix="-LV:u4}",
         low_limit=0,
         high_limit=300,
         pos_polarity=False,
     )
     lv_5 = SubGroup(
         WienerPSChannel,
-        prefix="-LV-u5}",
+        prefix="-LV:u5}",
         low_limit=0,
         high_limit=300,
         pos_polarity=False,
     )
     lv_6 = SubGroup(
         WienerPSChannel,
-        prefix="-LV-u6}",
+        prefix="-LV:u6}",
         low_limit=0,
         high_limit=300,
         pos_polarity=False,
     )
     lv_7 = SubGroup(
         WienerPSChannel,
-        prefix="-LV-u7}",
+        prefix="-LV:u7}",
         low_limit=0,
         high_limit=300,
         pos_polarity=False,
     )
 
-    hv_0 = SubGroup(WienerPSChannel, prefix="-HV-u300}", low_limit=0, high_limit=3000)
-    hv_1 = SubGroup(WienerPSChannel, prefix="-HV-u301}", low_limit=0, high_limit=3000)
-    hv_2 = SubGroup(WienerPSChannel, prefix="-HV-u302}", low_limit=0, high_limit=3000)
-    hv_3 = SubGroup(WienerPSChannel, prefix="-HV-u303}", low_limit=0, high_limit=3000)
-    hv_4 = SubGroup(WienerPSChannel, prefix="-HV-u304}", low_limit=0, high_limit=3000)
-    hv_5 = SubGroup(WienerPSChannel, prefix="-HV-u305}", low_limit=0, high_limit=3000)
-    hv_6 = SubGroup(WienerPSChannel, prefix="-HV-u306}", low_limit=0, high_limit=3000)
-    hv_7 = SubGroup(WienerPSChannel, prefix="-HV-u307}", low_limit=0, high_limit=3000)
+    hv_0 = SubGroup(WienerPSChannel, prefix="-HV:u300}", low_limit=0, high_limit=3000)
+    hv_1 = SubGroup(WienerPSChannel, prefix="-HV:u301}", low_limit=0, high_limit=3000)
+    hv_2 = SubGroup(WienerPSChannel, prefix="-HV:u302}", low_limit=0, high_limit=3000)
+    hv_3 = SubGroup(WienerPSChannel, prefix="-HV:u303}", low_limit=0, high_limit=3000)
+    hv_4 = SubGroup(WienerPSChannel, prefix="-HV:u304}", low_limit=0, high_limit=3000)
+    hv_5 = SubGroup(WienerPSChannel, prefix="-HV:u305}", low_limit=0, high_limit=3000)
+    hv_6 = SubGroup(WienerPSChannel, prefix="-HV:u306}", low_limit=0, high_limit=3000)
+    hv_7 = SubGroup(WienerPSChannel, prefix="-HV:u307}", low_limit=0, high_limit=3000)
 
     def __init__(self, prefix, **kwargs):
         # Pop out channel name arguments

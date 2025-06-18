@@ -92,6 +92,8 @@ class SST1Mono(PVGroup):
 
     setpoint = pvproperty(name=":ENERGY_SP", value=500.0)
     readback = pvproperty(name=":ENERGY_MON", value=500.0, read_only=True)
+    en_mon = pvproperty(name=":READBACK2.A", value=500.0, read_only=True)
+
     velocity = pvproperty(name=":ENERGY_VELO", value=5.0)
     done = pvproperty(name=":ERDY_STS", value=1)
     stop = pvproperty(name=":ENERGY_ST_CMD", value=0)
@@ -117,29 +119,35 @@ class SST1Mono(PVGroup):
             return
 
         await self.done.write(0)
+        await self.stop.write(0)
         await instance.write(value, verify_value=False)
 
         current = self.readback.value
         target = value
         speed = self.velocity.value
-
+        # print(f"Setting energy to {value} from {current} at {speed} mm/s")
         while abs(current - target) > 0.01:  # Small threshold for "close enough"
             direction = 1 if target > current else -1
             step = direction * speed * 0.1  # 0.1s worth of movement
 
             # Don't overshoot
             if abs(step) > abs(target - current):
+                # print(f"Overshooting, setting to {target}")
                 current = target
             else:
+                # print(f"Moving {step} to {current + step}")
                 current += step
 
             await self.readback.write(current)
             await asyncio.sleep(0.1)  # 10Hz update rate
 
             if self.stop.value:
+                await self.stop.write(0)
                 break
 
+        # print(f"Done moving, setting to {current}")
         await self.readback.write(current)
+        await self.en_mon.write(current)
         await self.done.write(1)
 
     @scan_start_cmd.putter
@@ -170,6 +178,7 @@ class SST1Mono(PVGroup):
 
             while self._scanning and current <= stop:
                 await self.readback.write(current)
+                await self.en_mon.write(current)
                 await asyncio.sleep(0.1)  # 10Hz update rate
                 current += speed * 0.1  # Increment based on speed
 
@@ -208,7 +217,14 @@ class SST1FlyControl(PVGroup):
     flymove_start = pvproperty(name="FlyMove-Mtr-Go.PROC", value=0)
     flymove_stop = pvproperty(name="FlyMove-Mtr.STOP", value=0)
     flymove_moving = pvproperty(name="FlyMove-Mtr.MOVN", value=0)
-
+    flyscan_type = pvproperty(
+        name="FlyScan-Type-SP",
+        record="mbbo",
+        value="Unidirectional",
+        enum_strings=["Unidirectional", "Bidirectional"],
+        dtype=ChannelType.ENUM,
+    )
+    flyscan_n_scans = pvproperty(name="EScanNScans-SP", value=1)
     scan_start_ev = pvproperty(
         name="EScanFirst-SP",
         value=500.0,
@@ -249,13 +265,18 @@ class SST1FlyControl(PVGroup):
     scan_start_go = pvproperty(name="FlyScan-Mtr-Go.PROC", value=0)
     scanning = pvproperty(name="FlyScan-Mtr.MOVN", value=0)
 
+    def __init__(self, *args, **kwargs):
+        self._scanning = False
+        self._flymove_task = None
+        super().__init__(*args, **kwargs)
+
     @undulator_dance_enable.putter
     async def undulator_dance_enable(self, instance, value):
         """Handle undulator dance enable."""
         await self.undulator_dance_readback.write(value)
         if value == 1:
             # Simulate enabling by setting bit 2 (value 4) after delay
-            await asyncio.sleep(self._delay)
+            await asyncio.sleep(2.0)
             await self.undulator_dance_readback.write(4)
 
     @flymove_start.putter
@@ -307,14 +328,46 @@ class SST1FlyControl(PVGroup):
             self._scan_task = asyncio.create_task(self._run_scan(start, stop, speed))
 
     async def _run_scan(self, start, stop, speed):
-        """Run the energy scan."""
-        try:
-            current = start
+        """Run the energy scan.
 
-            while self._scanning and current <= stop:
-                await self.readback.write(current)
-                await asyncio.sleep(0.1)
-                current += speed * 0.1
+        Performs energy scan based on scan type (unidirectional/bidirectional)
+        and number of scans. For unidirectional scans, returns to start at 10x speed.
+        """
+        try:
+            speed = abs(speed)
+            num_scans = self.flyscan_n_scans.value
+            is_bidirectional = bool(self.flyscan_type.value)
+
+            for scan in range(num_scans):
+
+                # Forward scan
+                current = start
+                while self._scanning and current <= stop:
+                    await self.readback.write(current)
+                    await asyncio.sleep(0.1)
+                    current += speed * 0.1
+
+                if not self._scanning:
+                    break
+
+                # Reverse scan if bidirectional
+                if is_bidirectional:
+                    current = stop
+                    while self._scanning and current >= start:
+                        await self.readback.write(current)
+                        await asyncio.sleep(0.1)
+                        current -= speed * 0.1
+                else:
+                    current = stop
+                    fast_speed = speed * 10
+                    while self._scanning and current >= start:
+                        await self.readback.write(current)
+                        await asyncio.sleep(0.1)
+                        current -= fast_speed * 0.1
+                # Return to start at 10x speed for next unidirectional scan
+
+                if not self._scanning:
+                    break
 
             self._scanning = False
             await self.scanning.write(0)

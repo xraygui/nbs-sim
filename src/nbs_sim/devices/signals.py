@@ -129,3 +129,27 @@ class ModeControl(PVGroup):
 
     def __init__(self, prefix, parent=None, **kwargs):
         super().__init__(prefix, parent=parent)
+
+
+class EndstationControl(PVGroup):
+    """Simulated beamline mode control.
+
+    Provides an enum PV for switching between Soft and Tender modes.
+    """
+
+    mode = pvproperty(
+        name="",
+        record="mbbo",
+        value="NEXAFS",
+        enum_strings=["NEXAFS", "HAXPES", "RSOXS", "VPEEM"],
+        dtype=ChannelType.ENUM,
+        doc="Endstation Mode",
+    )
+
+    def __init__(self, prefix, parent=None, value="NEXAFS", **kwargs):
+        super().__init__(prefix, parent=parent)
+        self.initial_value = value
+
+    @mode.startup
+    async def mode(self, instance, async_lib):
+        await instance.write(self.initial_value)
