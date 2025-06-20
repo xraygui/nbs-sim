@@ -8,25 +8,164 @@ try:
 except ImportError:
     import tomli as tomllib
 
-# Parse gases.toml for FlowSMSSim
-GASES_TOML_PATH = Path(__file__).parent.parent / "gases.toml"
+# Parse new_gases.toml for FlowSMSSim
+GASES_TOML_PATH = Path(__file__).parent.parent / "new_gases.toml"
 with open(GASES_TOML_PATH, "rb") as f:
     gases_config = tomllib.load(f)
 
 
-def get_gas_pv_defs():
-    pv_defs = {}
-    for gas, cfg in gases_config.items():
-        flow_range = cfg.get("flow_range", [0.0, 100.0])
-        pv_defs[gas] = {
-            "low": flow_range[0],
-            "high": flow_range[1],
+def parse_gas_config():
+    """
+    Parse new_gases.toml to extract gas information for each input.
+
+    Returns
+    -------
+    dict
+        Dictionary mapping input numbers to their gas configurations.
+    """
+    input_configs = {}
+
+    # Parse gas assignments to get available gases for each input
+    gas_assignments = gases_config.get("gas_assignments", {})
+
+    for input_num_str, assignment in gas_assignments.items():
+        input_num = int(input_num_str)
+        available_gases = []
+
+        # Extract gas names from the assignment
+        if "valve_off" in assignment:
+            available_gases.append(assignment["valve_off"])
+        if "valve_on" in assignment:
+            available_gases.append(assignment["valve_on"])
+        if "valve_null" in assignment:
+            available_gases.append(assignment["valve_null"])
+
+        input_configs[input_num] = {
+            "available_gases": available_gases,
+            "assignment": assignment,
         }
-    return pv_defs
+
+    # Add gas configuration details
+    gas_config = gases_config.get("gas_config", {})
+    for input_num, config in input_configs.items():
+        gas_details = {}
+        for gas_name in config["available_gases"]:
+            if gas_name in gas_config:
+                gas_details[gas_name] = gas_config[gas_name]
+        config["gas_details"] = gas_details
+
+    return input_configs
 
 
-GAS_PV_DEFS = get_gas_pv_defs()
-print(f"DEBUG: Found {len(GAS_PV_DEFS)} gases: {list(GAS_PV_DEFS.keys())}")
+def create_input_line_class(input_num, config):
+    """
+    Create an InputLineSim class for a specific input with its gas configuration.
+
+    Parameters
+    ----------
+    input_num : int
+        Input number (1-7)
+    config : dict
+        Configuration for this input from parse_gas_config()
+
+    Returns
+    -------
+    type
+        InputLineSim subclass with appropriate gas options and limits.
+    """
+    available_gases = config["available_gases"]
+    gas_details = config["gas_details"]
+
+    # Determine flow limits based on available gases
+    # Use the highest upper limit among available gases
+    max_flow = 0.0
+    for gas_name, details in gas_details.items():
+        if isinstance(details, dict) and "flow_range" in details:
+            max_flow = max(max_flow, details["flow_range"][1])
+        elif isinstance(details, dict):
+            # Handle nested gas configs (like CO.high, CO.low)
+            for sub_gas, sub_details in details.items():
+                if isinstance(sub_details, dict) and "flow_range" in sub_details:
+                    max_flow = max(max_flow, sub_details["flow_range"][1])
+
+    # Default to 60 sccm if no flow range found
+    if max_flow == 0.0:
+        max_flow = 60.0
+
+    class_attrs = {
+        "__doc__": f"""
+        Simulated input line {input_num} with gas selection and gas flows.
+        
+        Available gases: {', '.join(available_gases)}
+        """,
+        # Gas selection (determines which gas is available)
+        "Gas_Selection": pvproperty(
+            value=0,
+            enum_strings=available_gases,
+            record="mbbo",
+            dtype=ChannelType.ENUM,
+            doc=f"Gas selection for Input {input_num}",
+        ),
+        # Gas name (reflects current selection)
+        "Gas_Name": pvproperty(
+            value=available_gases[0] if available_gases else "",
+            dtype=str,
+            max_length=20,
+            read_only=True,
+            doc="Current gas name based on selection",
+        ),
+        # Gas flow for line A
+        "A_SP": pvproperty(
+            value=0.0,
+            dtype=float,
+            doc=f"Setpoint for Input {input_num}, A line (sccm)",
+            units="sccm",
+            lower_ctrl_limit=0.0,
+            upper_ctrl_limit=max_flow,
+        ),
+        "A_RB": pvproperty(
+            value=0.0,
+            dtype=float,
+            read_only=True,
+            doc=f"Readback for Input {input_num}, A line (sccm)",
+            units="sccm",
+        ),
+        # Gas flow for line B
+        "B_SP": pvproperty(
+            value=0.0,
+            dtype=float,
+            doc=f"Setpoint for Input {input_num}, B line (sccm)",
+            units="sccm",
+            lower_ctrl_limit=0.0,
+            upper_ctrl_limit=max_flow,
+        ),
+        "B_RB": pvproperty(
+            value=0.0,
+            dtype=float,
+            read_only=True,
+            doc=f"Readback for Input {input_num}, B line (sccm)",
+            units="sccm",
+        ),
+    }
+
+    # Create the class
+    InputLineClass = type(f"Input{input_num}Sim", (PVGroup,), class_attrs)
+
+    # Add the putter method for gas selection
+    @InputLineClass.Gas_Selection.putter
+    async def Gas_Selection(self, instance, value):
+        """Update gas name when gas selection changes."""
+        if value < len(available_gases):
+            gas_name = available_gases[value]
+            await self.Gas_Name.write(gas_name)
+        return value
+
+    return InputLineClass
+
+
+# Parse the gas configuration
+INPUT_CONFIGS = parse_gas_config()
+print(f"DEBUG: Parsed input configurations: {INPUT_CONFIGS}")
 
 
 class EurothermSim(PVGroup):
@@ -90,26 +229,34 @@ class EurothermSim(PVGroup):
 
 def create_flowsms_class():
     """
-    Dynamically create FlowSMSSim class with gas PVs.
+    Dynamically create FlowSMSSim class with input line PVs.
 
     Returns
     -------
     type
-        FlowSMSSim class with all gas PVs defined.
+        FlowSMSSim class with all input line PVs defined.
     """
     # Start with the base class attributes
     class_attrs = {
         "__doc__": """
         Simulated FlowSMS gas flow controller.
 
-        PVs are generated dynamically from gases.toml.
+        PVs are organized by physical inputs with gas selection and flow controls.
 
         Attributes
         ----------
-        Flow_<GAS>_SP : pvproperty
-            Setpoint for each gas (sccm).
-        Flow_<GAS>_RB : pvproperty
-            Readback for each gas (sccm).
+        Input_<N>_Gas_Selection : pvproperty
+            Gas selection for input N (enum with available gases).
+        Input_<N>_Gas_Name : pvproperty
+            Gas name for input N (reflects current selection).
+        Input_<N>_A_SP : pvproperty
+            Setpoint for input N, line A (sccm).
+        Input_<N>_A_RB : pvproperty
+            Readback for input N, line A (sccm).
+        Input_<N>_B_SP : pvproperty
+            Setpoint for input N, line B (sccm).
+        Input_<N>_B_RB : pvproperty
+            Readback for input N, line B (sccm).
         Flow_Apply : pvproperty
             Write 1 to apply all setpoints to readbacks.
         """,
@@ -118,28 +265,19 @@ def create_flowsms_class():
         ),
     }
 
-    # Add PVs for each gas
-    for gas, lims in GAS_PV_DEFS.items():
-        sp_name = f"{gas}_SP"
-        rb_name = f"{gas}_RB"
-        print(f"DEBUG: Adding PVs for gas {gas}: {sp_name}, {rb_name}")
+    # Add input line subgroups using the factory
+    for input_num in range(1, 8):
+        input_name = f"Input_{input_num}"
 
-        class_attrs[sp_name] = pvproperty(
-            value=0.0,
-            dtype=float,
-            doc=f"Setpoint for {gas} (sccm)",
-            units="sccm",
-            lower_ctrl_limit=lims["low"],
-            upper_ctrl_limit=lims["high"],
-        )
-
-        class_attrs[rb_name] = pvproperty(
-            value=0.0,
-            dtype=float,
-            read_only=True,
-            doc=f"Readback for {gas} (sccm)",
-            units="sccm",
-        )
+        if input_num in INPUT_CONFIGS:
+            # Create input line class using factory
+            input_class = create_input_line_class(input_num, INPUT_CONFIGS[input_num])
+            class_attrs[input_name] = SubGroup(
+                input_class, prefix=f"Input_{input_num}_"
+            )
+        else:
+            # Fallback for missing inputs
+            print(f"Warning: No configuration found for input {input_num}")
 
     # Create the class
     FlowSMSSim = type("FlowSMSSim", (PVGroup,), class_attrs)
@@ -151,11 +289,17 @@ def create_flowsms_class():
         Apply all setpoints to readbacks when set to 1.
         """
         if value == 1:
-            for gas in GAS_PV_DEFS:
-                sp = getattr(self, f"{gas}_SP")
-                rb = getattr(self, f"{gas}_RB")
-                sp_val = sp.value
-                await rb.write(sp_val)
+            # Apply all A and B line setpoints to readbacks
+            for input_num in range(1, 8):
+                input_line = getattr(self, f"Input_{input_num}")
+
+                # Apply A line
+                a_sp = input_line.A_SP.value
+                await input_line.A_RB.write(a_sp)
+
+                # Apply B line
+                b_sp = input_line.B_SP.value
+                await input_line.B_RB.write(b_sp)
         return 0
 
     return FlowSMSSim
@@ -244,11 +388,29 @@ class FasstcatSimDevice(PVGroup):
         Simulated FlowSMS gas flow controller.
     pulse : SubGroup
         Simulated pulse mode controller.
+    Gas_Options : pvproperty
+        Comma-separated string of available gas flow options.
     """
 
     eurotherm = SubGroup(EurothermSim, prefix="eurotherm}")
     flowsms = SubGroup(FlowSMSSim, prefix="flowsms}")
     pulse = SubGroup(PulseSim, prefix="pulse}")
+
+    # Generate gas options from parsed configuration
+    def _get_gas_options():
+        """Get all available gas names from the configuration."""
+        all_gases = set()
+        for config in INPUT_CONFIGS.values():
+            all_gases.update(config["available_gases"])
+        return sorted(list(all_gases))
+
+    Gas_Options = pvproperty(
+        value=",".join(_get_gas_options()),
+        dtype=str,
+        max_length=1000,
+        read_only=True,
+        doc="Available gas flow options (comma-separated)",
+    )
 
 
 if __name__ == "__main__":
