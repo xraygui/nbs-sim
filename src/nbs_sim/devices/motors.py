@@ -1,8 +1,166 @@
 from caproto.server import PVGroup, pvproperty
-from caproto.ioc_examples.fake_motor_record import motor_record_simulator
 import asyncio
 import numpy as np
-from caproto import ChannelType
+from caproto.ioc_examples.fake_motor_record import (
+    broadcast_precision_to_fields,
+    motor_record_simulator,
+)
+
+
+async def enhanced_motor_record_simulator(
+    instance, async_lib, defaults=None, tick_rate_hz=10.0
+):
+    """
+    An enhanced motor record simulator with proper acceleration support.
+
+    Parameters
+    ----------
+    instance : pvproperty (ChannelDouble)
+        Ensure you set ``record='motor'`` in your pvproperty first.
+
+    async_lib : AsyncLibraryLayer
+
+    defaults : dict, optional
+        Defaults for velocity, precision, acceleration, limits, and resolution.
+
+    tick_rate_hz : float, optional
+        Update rate in Hz.
+    """
+    if defaults is None:
+        defaults = dict(
+            velocity=1,
+            precision=3,
+            acceleration=1.0,
+            resolution=1e-6,
+            tick_rate_hz=10.0,
+            user_limits=(0.0, 100.0),
+            settling_time=0.0,
+        )
+
+    fields = instance.field_inst
+    have_new_position = False
+
+    async def value_write_hook(fields, value):
+        nonlocal have_new_position
+        # This happens when a user puts to `motor.VAL`
+        have_new_position = True
+
+    fields.value_write_hook = value_write_hook
+
+    await instance.write_metadata(precision=defaults["precision"])
+    await broadcast_precision_to_fields(instance)
+
+    await fields.velocity.write(defaults["velocity"])
+    await fields.seconds_to_velocity.write(defaults["acceleration"])
+    await fields.motor_step_size.write(defaults["resolution"])
+    await fields.user_low_limit.write(defaults["user_limits"][0])
+    await fields.user_high_limit.write(defaults["user_limits"][1])
+
+    while True:
+        dwell = 1.0 / tick_rate_hz
+        target_pos = instance.value
+        current_pos = fields.user_readback_value.value
+        diff = target_pos - current_pos
+
+        if abs(diff) < 1e-9 and not have_new_position:
+            if fields.stop.value != 0:
+                await fields.stop.write(0)
+            await async_lib.library.sleep(dwell)
+            continue
+
+        if fields.stop.value != 0:
+            await fields.stop.write(0)
+
+        await fields.done_moving_to_value.write(0)
+        await fields.motor_is_moving.write(1)
+
+        # Calculate motion profile with acceleration
+        velocity = fields.velocity.value
+        time_to_full_velocity = fields.seconds_to_velocity.value
+        if time_to_full_velocity == 0:
+            acceleration = 0
+        else:
+            acceleration = velocity / time_to_full_velocity
+
+        # Calculate motion parameters
+        distance = abs(diff)
+        if distance > 0 and velocity > 0 and acceleration > 0:
+            # Calculate time to reach full velocity
+
+            # Calculate distance covered during acceleration
+            accel_distance = 0.5 * acceleration * time_to_full_velocity**2
+
+            # Check if we can reach full velocity
+            if distance <= 2 * accel_distance:
+                # Triangular profile - can't reach full velocity
+                time_to_full_velocity = np.sqrt(distance / acceleration)
+                max_velocity = acceleration * time_to_full_velocity
+                total_time = 2 * time_to_full_velocity
+            else:
+                # Trapezoidal profile - can reach full velocity
+                max_velocity = velocity
+                constant_distance = distance - 2 * accel_distance
+                constant_time = constant_distance / velocity
+                total_time = 2 * time_to_full_velocity + constant_time
+        else:
+            # No acceleration or no movement
+            total_time = distance / velocity if velocity > 0 else 0
+            max_velocity = velocity
+            time_to_full_velocity = 0
+
+        # Calculate number of steps
+        num_steps = int(total_time // dwell)
+        if num_steps <= 0:
+            num_steps = 1
+
+        step_size = diff / num_steps
+        resolution = max((fields.motor_step_size.value, 1e-10))
+        print(
+            f"num_steps: {num_steps}, step_size: {step_size}, resolution: {resolution}, time_to_full_velocity: {time_to_full_velocity}, max_velocity: {max_velocity}, total_time: {total_time}, diff: {diff}"
+        )
+        for step in range(num_steps):
+            if fields.stop.value != 0:
+                await fields.stop.write(0)
+                await instance.write(current_pos)
+                break
+            if fields.stop_pause_move_go.value == "Stop":
+                await instance.write(current_pos)
+                break
+
+            # Calculate current velocity based on motion profile
+            if total_time > 0:
+                current_time = step * dwell
+                if current_time <= time_to_full_velocity:
+                    # Acceleration phase
+                    current_velocity = acceleration * current_time
+                elif current_time >= (total_time - time_to_full_velocity):
+                    # Deceleration phase
+                    decel_time = total_time - current_time
+                    current_velocity = acceleration * decel_time
+                else:
+                    # Constant velocity phase
+                    current_velocity = max_velocity
+            else:
+                current_velocity = 0
+
+            # Update position
+            current_pos += step_size
+            raw_readback = current_pos / resolution
+
+            await fields.user_readback_value.write(current_pos)
+            await fields.dial_readback_value.write(current_pos)
+            await fields.raw_readback_value.write(raw_readback)
+
+            await async_lib.library.sleep(dwell)
+        else:
+            # Only executed if we didn't break
+            if defaults.get("settling_time", 0.0) > 0:
+                await async_lib.library.sleep(defaults.get("settling_time", 0.0))
+            await fields.user_readback_value.write(target_pos)
+
+        await fields.motor_is_moving.write(0)
+        await fields.done_moving_to_value.write(1)
+        have_new_position = False
 
 
 class FakeMotor(PVGroup):
@@ -15,12 +173,13 @@ class FakeMotor(PVGroup):
         prefix,
         velocity=1.0,
         precision=3,
-        acceleration=1.0,
+        acceleration=0.25,
         resolution=1e-6,
         user_limits=(0.0, 100.0),
         tick_rate_hz=10.0,
         value=0,
         parent=None,
+        settling_time=0.0,
         **kwargs,
     ):
         super().__init__(prefix, parent=parent)
@@ -33,13 +192,14 @@ class FakeMotor(PVGroup):
             "acceleration": acceleration,
             "resolution": resolution,
             "user_limits": user_limits,
+            "settling_time": settling_time,
         }
 
     @motor.startup
     async def motor(self, instance, async_lib):
         # Start the simulator:
         await instance.write(self.initial_value)
-        await motor_record_simulator(
+        await enhanced_motor_record_simulator(
             self.motor,
             async_lib,
             self.defaults,

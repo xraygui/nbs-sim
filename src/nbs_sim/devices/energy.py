@@ -32,10 +32,19 @@ class SSTEPU(PVGroup):
     """Simulated SST EPU device."""
 
     gap = SubGroup(
-        FakeUndulatorMotor, prefix="Gap}-Mtr", velocity=5000.0, value=14000.0
+        FakeUndulatorMotor,
+        prefix="Gap}-Mtr",
+        velocity=800.0,
+        value=14000.0,
+        acceleration=0.25,
+        settling_time=0.25,
     )
     phase = SubGroup(
-        FakeUndulatorMotor, prefix="Phase}-Mtr", velocity=5000.0, value=0.0
+        FakeUndulatorMotor,
+        prefix="Phase}-Mtr",
+        velocity=5000.0,
+        value=0.0,
+        acceleration=0,
     )
     mode = SubGroup(
         FakePositioner, prefix="Phase}Phs:Mode", value=2

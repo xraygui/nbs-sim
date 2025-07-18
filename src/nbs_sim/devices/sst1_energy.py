@@ -83,8 +83,8 @@ class SST1MonoMirror(SST1TypeBase):
 class SST1Mono(PVGroup):
     """Simulated SST1 Monochromator."""
 
-    grating = SubGroup(FakeFMBOMotor, prefix="GrtP}Mtr", value=0)
-    mirror2 = SubGroup(FakeFMBOMotor, prefix="MirP}Mtr", value=0)
+    grating = SubGroup(FakeFMBOMotor, prefix="GrtP}Mtr", value=0, acceleration=0.1)
+    mirror2 = SubGroup(FakeFMBOMotor, prefix="MirP}Mtr", value=0, acceleration=0.1)
     gratingx = SubGroup(SST1MonoGrating, prefix="GrtX}Mtr")
     mirror2x = SubGroup(SST1MonoMirror, prefix="MirX}Mtr")
     cff = pvproperty(name=":CFF_SP", value=1.55, dtype=PvpropertyDouble)
