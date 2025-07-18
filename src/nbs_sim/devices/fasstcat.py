@@ -236,6 +236,11 @@ class EurothermSim(PVGroup):
         Write 1 to start ramping event.
     Temp_Readback : pvproperty
         Simulated current temperature (degC).
+    Temp_Hold : pvproperty
+        Write 1 to hold at current temperature and cancel any ongoing ramp.
+        Auto-resets to 0.
+    Status : pvproperty
+        Status of the Eurotherm controller (0=idle, 1=running).
     """
 
     Temp_Setpoint = pvproperty(
@@ -246,6 +251,32 @@ class EurothermSim(PVGroup):
     Temp_Readback = pvproperty(
         value=22.0, dtype=float, read_only=True, doc="Current temperature (degC)"
     )
+    Temp_Hold = pvproperty(
+        value=0,
+        dtype=int,
+        doc=(
+            """
+            Hold the current temperature and cancel any ongoing ramp.
+
+            Write 1 to hold at the current temperature. The device will auto-reset 
+            this PV to 0.
+            """
+        ),
+    )
+    Status = pvproperty(
+        value="idle",
+        enum_strings=["idle", "running"],
+        record="mbbo",
+        dtype=ChannelType.ENUM,
+        doc="Status of the Eurotherm controller (0=idle, 1=running)",
+        read_only=True,
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._ramp_task = None
+        self._hold = False
+        self._hold_task = None
 
     async def _ramp_temperature(self, target, rate):
         """
@@ -258,26 +289,94 @@ class EurothermSim(PVGroup):
         rate : float
             Ramp rate (degC/min).
         """
-        current = self.Temp_Readback.value
-        step = rate / 60.0  # degC per second
-        while abs(current - target) > 0.01:
-            if current < target:
-                current = min(current + step, target)
-            else:
-                current = max(current - step, target)
-            await self.Temp_Readback.write(current)
-            await asyncio.sleep(1)
-        await self.Temp_Readback.write(target)
+        try:
+            current = self.Temp_Readback.value
+            step = rate / 60.0  # degC per second
+            while abs(current - target) > 0.01:
+                if self._hold:
+                    break
+                if current < target:
+                    current = min(current + step, target)
+                else:
+                    current = max(current - step, target)
+                await self.Temp_Readback.write(current)
+                await asyncio.sleep(1)
+            if not self._hold:
+                await self.Temp_Readback.write(target)
+        except asyncio.CancelledError:
+            pass
+        await self.Status.write("idle")  # idle
+
+    async def _hold_timer(self, minutes):
+        """
+        Hold at current temperature for the specified number of minutes.
+
+        Parameters
+        ----------
+        minutes : float
+            Hold duration in minutes.
+        """
+        try:
+            await self.Status.write(1)  # running
+            await asyncio.sleep(minutes * 60)
+        except asyncio.CancelledError:
+            pass
+        await self.Status.write("idle")  # idle
+        await self.Temp_Hold.write(0)
 
     @Temp_Trigger.putter
     async def Temp_Trigger(self, instance, value):
         """
-        Start a temperature ramp when set to 1.
+        Start a temperature ramp when set to 1. Cancels any running ramp and clears hold.
         """
+        await instance.write(value, verify_value=False)
         if value == 1:
+            # Cancel any running ramp
+            if self._ramp_task is not None and not self._ramp_task.done():
+                self._ramp_task.cancel()
+                try:
+                    await self._ramp_task
+                except Exception:
+                    pass
+            self._hold = False
             target = self.Temp_Setpoint.value
             rate = self.Temp_Rate.value
+            await self.Status.write("running")
             self._ramp_task = asyncio.create_task(self._ramp_temperature(target, rate))
+        await asyncio.sleep(0.2)
+        return 0
+
+    @Temp_Hold.putter
+    async def Temp_Hold(self, instance, value):
+        """
+        Hold the current temperature and cancel any ongoing ramp or hold timer.
+
+        If value > 0, hold for that many minutes (status running, then idle).
+        If value == 0, cancel any ramp/hold and set status to idle.
+        """
+        await instance.write(value, verify_value=False)
+        # Cancel any running ramp
+        if self._ramp_task is not None and not self._ramp_task.done():
+            self._ramp_task.cancel()
+            try:
+                await self._ramp_task
+            except Exception:
+                pass
+        # Cancel any running hold timer
+        if self._hold_task is not None and not self._hold_task.done():
+            self._hold_task.cancel()
+            try:
+                await self._hold_task
+            except Exception:
+                pass
+        if value > 0:
+            await self.Status.write("running")  # running
+            self._hold_task = asyncio.create_task(self._hold_timer(value))
+        else:
+            await self.Status.write("idle")  # idle
+            await asyncio.sleep(0.2)
+            return 0
+        await asyncio.sleep(0.2)
         return 0
 
 
@@ -342,6 +441,7 @@ def create_flowsms_class():
         """
         Apply all setpoints to readbacks when set to 1.
         """
+        await instance.write(value, verify_value=False)
         if value == 1:
             # Apply all A and B line setpoints to readbacks
             for input_num in range(1, 8):
@@ -354,6 +454,7 @@ def create_flowsms_class():
                 # Apply B line
                 b_sp = input_line.B_SP.value
                 await input_line.B_RB.write(b_sp)
+        await asyncio.sleep(0.2)
         return 0
 
     return FlowSMSSim
@@ -380,7 +481,7 @@ class PulseSim(PVGroup):
     Pulse_Trigger : pvproperty
         Write 1 to start pulse sequence.
     Pulse_Status : pvproperty
-        Enum: ["idle", "running", "done"]
+        Enum: ["idle", "running"]
     """
 
     Line_Select = pvproperty(
@@ -403,30 +504,30 @@ class PulseSim(PVGroup):
         value=0, dtype=int, doc="Write 1 to start pulse sequence"
     )
     Pulse_Status = pvproperty(
-        value=0,
-        enum_strings=["idle", "running", "done"],
+        value="idle",
+        enum_strings=["idle", "running"],
         record="mbbo",
         dtype=ChannelType.ENUM,
         read_only=True,
-        doc="Pulse status",
+        doc="Pulse status (0=idle, 1=running)",
     )
 
     async def _run_pulses(self, count, pulse_time):
-        await self.Pulse_Status.write(1)  # running
         await asyncio.sleep(count * pulse_time)
-        await self.Pulse_Status.write(2)  # done
-        await asyncio.sleep(1)
-        await self.Pulse_Status.write(0)  # idle
+        await self.Pulse_Status.write("idle")  # idle
 
     @Pulse_Trigger.putter
     async def Pulse_Trigger(self, instance, value):
         """
         Start pulse sequence when set to 1.
         """
+        await instance.write(value, verify_value=False)
         if value == 1:
             count = self.Pulse_Count.value
             pulse_time = self.Pulse_Time.value
+            await self.Pulse_Status.write("running")  # running
             self._pulse_task = asyncio.create_task(self._run_pulses(count, pulse_time))
+        await asyncio.sleep(0.2)
         return 0
 
 
@@ -442,11 +543,39 @@ class FasstcatSimDevice(PVGroup):
         Simulated FlowSMS gas flow controller.
     pulse : SubGroup
         Simulated pulse mode controller.
+    Segment_Status : pvproperty
+        Overall segment status (0=idle, 1=running)
     """
 
     eurotherm = SubGroup(EurothermSim, prefix="eurotherm}")
     flowsms = SubGroup(FlowSMSSim, prefix="flowsms}")
     pulse = SubGroup(PulseSim, prefix="pulse}")
+    Segment_Status = pvproperty(
+        value="idle",
+        name="}Segment_Status",
+        enum_strings=["idle", "running"],
+        record="mbbo",
+        dtype=ChannelType.ENUM,
+        doc="Overall segment status (0=idle, 1=running)",
+        read_only=True,
+    )
+
+    @Segment_Status.scan(period=5)
+    async def Segment_Status(self, instance, async_lib):
+        """
+        Periodically update Segment_Status based on child statuses.
+        """
+        eurotherm_status = self.eurotherm.Status.value
+        pulse_status = self.pulse.Pulse_Status.value
+        # print(
+        #     f"DEBUG: Eurotherm status: {eurotherm_status}, Pulse status: {pulse_status}"
+        # )
+        if eurotherm_status == "running" or pulse_status == "running":
+            # print("DEBUG: Segment status: running")
+            await instance.write("running")
+        else:
+            # print("DEBUG: Segment status: idle")
+            await instance.write("idle")
 
 
 if __name__ == "__main__":
