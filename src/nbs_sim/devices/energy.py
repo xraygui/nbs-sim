@@ -7,7 +7,7 @@ from caproto.server import (
     PvpropertyDouble,
 )
 from .sst1_energy import SST1Mono, SST1FlyControl
-from .hax_dcm import DCM
+from .hax_dcm import DCM, DCM_energy
 from .motors import FakeUndulatorMotor, FakePositioner
 import contextvars
 
@@ -49,13 +49,14 @@ class SSTEPU(PVGroup):
     mode = SubGroup(
         FakePositioner, prefix="Phase}Phs:Mode", value=2
     )  # 2 is linear horizontal
-
+    tu_enable = pvproperty(name="TU}Sw:AmpEn-Sts", value=1)
+    td_enable = pvproperty(name="TD}Sw:AmpEn-Sts", value=1)
 
 class SST1Energy(PVGroup):
     """Simulated SST1 Energy System."""
 
     mono = SubGroup(SST1Mono, prefix="XF:07ID1-OP{Mono:PGM1-Ax:")
-    epu60 = SubGroup(SSTEPU, prefix="SR:C07-ID:G1A{SST1:1-Ax:")
+    undulator = SubGroup(SSTEPU, prefix="SR:C07-ID:G1A{SST1:1-Ax:")
     flyer = SubGroup(SST1FlyControl, prefix="SR:C07-ID:G1A{SST1:1}")
 
     @property
@@ -66,10 +67,43 @@ class SST1Energy(PVGroup):
 class HAXEnergy(PVGroup):
     """Simulated HAX Energy System."""
 
-    u42 = SubGroup(SSTEPU, prefix="SR:C07-ID:G1A{SST2:1-Ax:")
+    undulator = SubGroup(SSTEPU, prefix="SR:C07-ID:G1A{SST2:1-Ax:")
     mono = SubGroup(DCM, prefix="XF:07ID6-OP{Mono:DCM1-Ax:")
     harmonic = pvproperty(name="XF:07ID2-HAXMonitor:U42harmonic", value=3, dtype=int)
 
     @property
     def value(self):
         return self.mono.readback.value
+
+class HAXEnergyFlyer(PVGroup):
+    undulator = SubGroup(SSTEPU, prefix="SR:C07-ID:G1A{SST2:1-Ax:")
+    mono = SubGroup(DCM_energy, prefix="XF:07ID6-OP{Mono:DCM1-Ax:")
+    harmonic = pvproperty(name="XF:07ID2-HAXMonitor:U42harmonic", value=3, dtype=int)
+    flyer = SubGroup(SST1FlyControl, prefix="SR:C07-ID:G1A{SST2:1}")
+    mode = pvproperty(name = "XF:07ID6-OP{MC:08}DCM_MODE", dtype=str)
+    mode_rbv = pvproperty(name = "XF:07ID6-OP{MC:08}DCM_MODE_RBV", dtype=str)
+    offset_gap_rb = pvproperty(name="SR:C07-ID:G1A{SST2:1}EScanIDEnergyOffset-RB")
+    offset_gap_sp = pvproperty(name="SR:C07-ID:G1A{SST2:1}EScanIDEnergyOffset-SP")
+    flyharmonic_rb = pvproperty(name="SR:C07-ID:G1A{SST2:1}FlyHarmonic-RB", value=1)
+    flyharmonic_sp = pvproperty(name="SR:C07-ID:G1A{SST2:1}FlyHarmonic-SP", value=1)
+    flyenergy = pvproperty(name="SR:C07-ID:G1A{SST2:1}FlyEnergyDCM-RB", value=0)
+
+    @flyenergy.scan(period=0.1)
+    async def flyenergy(self, instance, async_lib):
+        await instance.write(self.mono.readback.value)
+        
+    @property
+    def value(self):
+        return self.mono.readback.value
+
+    @mode.putter
+    async def mode(self, instance, value):
+        await self.mode_rbv.write(value)
+
+    @offset_gap_sp.putter
+    async def offset_gap_sp(self, instance, value):
+        await self.offset_gap_rb.write(value)
+
+    @flyharmonic_sp.putter
+    async def flyharmonic_sp(self, instance, value):
+        await self.flyharmonic_rb.write(value)

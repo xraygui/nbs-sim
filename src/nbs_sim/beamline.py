@@ -41,8 +41,8 @@ class Beamline(BeamlineModel, PVGroup):
         print(dirpath)
         data = np.load(join(dirpath, "all_edges.npz"))
         refdata = np.load(join(dirpath, "all_ref.npz"))
-        self.yspl = UnivariateSpline(data["x"], data["y"], s=0)
-        self.refspl = UnivariateSpline(refdata["x"], refdata["y"], s=0)
+        self.yspl = UnivariateSpline(data["x"], data["y"], s=0, ext=3)
+        self.refspl = UnivariateSpline(refdata["x"], refdata["y"], s=0, ext=3)
 
     def add_to_transmission(self, device):
         self.transmission_list.append(device)
