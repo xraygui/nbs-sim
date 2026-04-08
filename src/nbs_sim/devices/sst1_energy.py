@@ -289,6 +289,12 @@ class SST1FlyControl(PVGroup):
         else:
             await self.undulator_dance_readback.write(2)
 
+    @flymove_go.putter
+    async def flymove_go(self, instance, value):
+        """Handle flymove go command."""
+        await self.flymove_stop_ev.write(value)
+        await self.flymove_start.write(1)
+
     @flymove_start.putter
     async def flymove_start(self, instance, value):
         """Handle flymove start command."""
@@ -303,6 +309,7 @@ class SST1FlyControl(PVGroup):
     @flymove_speed_ev.putter
     async def flymove_speed_ev(self, instance, value):
         await self.flymove_speed_rb.write(value)
+
     @flymove_rbv.scan(period=0.1)
     async def flymove_rbv(self, instance, async_lib):
         """Handle flymove readback."""

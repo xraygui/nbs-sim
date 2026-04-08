@@ -7,7 +7,7 @@ from caproto.server import (
     PvpropertyDouble,
 )
 from .sst1_energy import SST1Mono, SST1FlyControl
-from .hax_dcm import DCM, DCM_energy
+from .hax_dcm import DCM_energy #, DCM
 from .motors import FakeUndulatorMotor, FakePositioner
 import contextvars
 
@@ -64,16 +64,16 @@ class SST1Energy(PVGroup):
         return self.mono.readback.value
 
 
-class HAXEnergy(PVGroup):
-    """Simulated HAX Energy System."""
+# class HAXEnergy(PVGroup):
+#     """Simulated HAX Energy System."""
 
-    undulator = SubGroup(SSTEPU, prefix="SR:C07-ID:G1A{SST2:1-Ax:")
-    mono = SubGroup(DCM, prefix="XF:07ID6-OP{Mono:DCM1-Ax:")
-    harmonic = pvproperty(name="XF:07ID2-HAXMonitor:U42harmonic", value=3, dtype=int)
+#     undulator = SubGroup(SSTEPU, prefix="SR:C07-ID:G1A{SST2:1-Ax:")
+#     mono = SubGroup(DCM, prefix="XF:07ID6-OP{Mono:DCM1-Ax:")
+#     harmonic = pvproperty(name="XF:07ID2-HAXMonitor:U42harmonic", value=3, dtype=int)
 
-    @property
-    def value(self):
-        return self.mono.readback.value
+#     @property
+#     def value(self):
+#         return self.mono.readback.value
 
 class HAXEnergyFlyer(PVGroup):
     undulator = SubGroup(SSTEPU, prefix="SR:C07-ID:G1A{SST2:1-Ax:")
