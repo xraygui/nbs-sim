@@ -1,0 +1,126 @@
+# FASSTCAT Gas Configuration
+# Each entry represents a single gas flow with explicit line and flow rate properties
+[inputs.1]
+valve = "I"
+mfc_a = 4
+mfc_b = 13
+
+[inputs.2]
+valve = "H"
+mfc_a = 4
+mfc_b = 13
+
+[inputs.3]
+valve = ""
+mfc_a = 5
+mfc_b = 12
+
+[inputs.4]
+valve = "D"
+mfc_a = 6
+mfc_b = 11
+
+[inputs.5]
+valve = "E"
+mfc_a = 7
+mfc_b = 10
+
+[inputs.6]
+valve = "G"
+mfc_a = 8
+mfc_b = ""
+
+[inputs.7]
+valve = "F"
+mfc_a = ""
+mfc_b = 9
+
+[gas_assignments]
+1 = {"valve_off" = "H2", "valve_on" = "D2"}
+2 = {"valve_off" = "D2", "valve_on" = "H2"}
+3 = {"valve_null" = "O2"}
+4 = {"valve_off" = "CO", "valve_on" = "CO2"}
+5 = {"valve_off" = "C2H6", "valve_on" = "CH4"}
+6 = {"valve_off" = "He", "valve_on" = "N2"}
+7 = {"valve_off" = "N2", "valve_on" = "He"}
+
+[gas_config]
+[gas_config.H2]
+cal_id = 0
+flow_range = [0.6, 30.0]
+cal_factor = 1.0
+float_to_int_factor = 30
+
+[gas_config.D2]
+cal_id = 1
+flow_range = [0.6, 30.0]
+cal_factor = 1.0
+float_to_int_factor = 30
+
+[gas_config.O2]
+cal_id = 0
+flow_range = [0.6, 30.0]
+cal_factor = 1.0
+float_to_int_factor = 30
+
+[gas_config.CO]
+[gas_config.CO.high]
+cal_id = 0
+flow_range = [0.6, 30.0]
+cal_factor = 1.0
+float_to_int_factor = 30
+
+[gas_config.CO.low]
+cal_id = 3
+flow_range = [0.36, 18.0]
+cal_factor = 1.0
+float_to_int_factor = 18
+
+[gas_config.CO2]
+[gas_config.CO2.high]
+cal_id = 1
+flow_range = [0.6, 30.0]
+cal_factor = 1.0
+float_to_int_factor = 30
+
+[gas_config.CO2.low]
+cal_id = 2
+flow_range = [0.26, 13.0]
+cal_factor = 1.0
+float_to_int_factor = 13
+
+[gas_config.CH4]
+cal_id = 0
+flow_range = [0.6, 30.0]
+cal_factor = 1.0
+float_to_int_factor = 30
+
+[gas_config.C2H6]
+cal_id = 1
+flow_range = [0.6, 30.0]
+cal_factor = 1.0
+float_to_int_factor = 30
+
+[gas_config.C3H8]
+cal_id = 2
+flow_range = [0.6, 30.0]
+cal_factor = 1.0
+float_to_int_factor = 30
+
+[gas_config.He]
+cal_id = 0
+flow_range = [1.2, 60.0]
+cal_factor = 1.0
+float_to_int_factor = 60
+
+[gas_config.Ar]
+cal_id = 1
+flow_range = [1.2, 60.0]
+cal_factor = 1.0
+float_to_int_factor = 60
+
+[gas_config.N2]
+cal_id = 2
+flow_range = [1.2, 60.0]
+cal_factor = 1.0
+float_to_int_factor = 60

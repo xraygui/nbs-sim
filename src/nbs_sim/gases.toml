@@ -1,0 +1,205 @@
+[H2_A]
+node_id = 4
+cal_id = 0
+flow_range = [0.6, 30.0]
+cal_factor = 1.0
+float_to_int_factor = 30
+valve_settings = ["I", "OFF"]
+
+[H2_B]
+node_id = 13
+cal_id = 0
+flow_range = [0.6, 30.0]
+cal_factor = 1.0
+float_to_int_factor = 30
+valve_settings = ["H", "ON"]
+
+[D2_A]
+node_id = 4
+cal_id = 1
+flow_range = [0.6, 30.0]
+cal_factor = 1.0
+float_to_int_factor = 30
+valve_settings = ["I", "ON"]
+
+[D2_B]
+node_id = 13
+cal_id = 1
+flow_range = [0.6, 30.0]
+cal_factor = 1.0
+float_to_int_factor = 30
+valve_settings = ["H", "OFF"]
+
+[O2_A]
+node_id = 5
+cal_id = 0
+flow_range = [0.6, 30.0]
+cal_factor = 1.0
+float_to_int_factor = 30
+
+[O2_B]
+node_id = 12
+cal_id = 0
+flow_range = [0.6, 30.0]
+cal_factor = 1.0
+float_to_int_factor = 30
+
+[CO_AH]
+node_id = 6
+cal_id = 0
+flow_range = [0.6, 30.0]
+cal_factor = 1.0
+float_to_int_factor = 30
+valve_settings = ["D", "OFF"]
+
+[CO_AL]
+node_id = 6
+cal_id = 3
+flow_range = [0.36, 18.0]
+cal_factor = 1.0
+float_to_int_factor = 18
+valve_settings = ["D", "OFF"]
+
+[CO_BH]
+node_id = 11
+cal_id = 0
+flow_range = [0.6, 30.0]
+cal_factor = 1.0
+float_to_int_factor = 30
+valve_settings = ["D", "OFF"]
+
+[CO_BL]
+node_id = 11
+cal_id = 3
+flow_range = [0.36, 18.0]
+cal_factor = 1.0
+float_to_int_factor = 18
+valve_settings = ["D", "OFF"]
+
+[CO2_AH]
+node_id = 6
+cal_id = 1
+flow_range = [0.6, 30.0]
+cal_factor = 1.0
+float_to_int_factor = 30
+valve_settings = ["D", "ON"]
+
+[CO2_AL]
+node_id = 6
+cal_id = 2
+flow_range = [0.26, 13.0]
+cal_factor = 1.0
+float_to_int_factor = 13
+valve_settings = ["D", "ON"]
+
+[CO2_BH]
+node_id = 11
+cal_id = 1
+flow_range = [0.6, 30.0]
+cal_factor = 1.0
+float_to_int_factor = 30
+valve_settings = ["D", "ON"]
+
+[CO2_BL]
+node_id = 11
+cal_id = 2
+flow_range = [0.26, 13.0]
+cal_factor = 1.0
+float_to_int_factor = 13
+valve_settings = ["D", "ON"]
+
+[CH4_A]
+node_id = 7
+cal_id = 0
+flow_range = [0.6, 30.0]
+cal_factor = 1.0
+float_to_int_factor = 30
+valve_settings = ["E", "ON"]
+
+[CH4_B]
+node_id = 10
+cal_id = 0
+flow_range = [0.6, 30.0]
+cal_factor = 1.0
+float_to_int_factor = 30
+valve_settings = ["E", "ON"]
+
+[C2H6_A]
+node_id = 7
+cal_id = 1
+flow_range = [0.6, 30.0]
+cal_factor = 1.0
+float_to_int_factor = 30
+valve_settings = ["E", "OFF"]
+
+[C2H6_B]
+node_id = 10
+cal_id = 1
+flow_range = [0.6, 30.0]
+cal_factor = 1.0
+float_to_int_factor = 30
+valve_settings = ["E", "OFF"]
+
+[C3H8_A]
+node_id = 7
+cal_id = 2
+flow_range = [0.6, 30.0]
+cal_factor = 1.0
+float_to_int_factor = 30
+valve_settings = ["E", "OFF"]
+
+[C3H8_B]
+node_id = 10
+cal_id = 2
+flow_range = [0.6, 30.0]
+cal_factor = 1.0
+float_to_int_factor = 30
+valve_settings = ["E", "OFF"]
+
+[He_A]
+node_id = 8
+cal_id = 0
+flow_range = [1.2, 60.0]
+cal_factor = 1.0
+float_to_int_factor = 60
+valve_settings = ["G", "OFF"]
+
+[He_B]
+node_id = 9
+cal_id = 0
+flow_range = [1.2, 60.0]
+cal_factor = 1.0
+float_to_int_factor = 60
+valve_settings = ["F", "ON"]
+
+[Ar_A]
+node_id = 8
+cal_id = 1
+flow_range = [1.2, 60.0]
+cal_factor = 1.0
+float_to_int_factor = 60
+valve_settings = ["G", "ON"]
+
+[Ar_B]
+node_id = 9
+cal_id = 1
+flow_range = [1.2, 60.0]
+cal_factor = 1.0
+float_to_int_factor = 60
+valve_settings = ["F", "OFF"]
+
+[N2_A]
+node_id = 8
+cal_id = 2
+flow_range = [1.2, 60.0]
+cal_factor = 1.0
+float_to_int_factor = 60
+valve_settings = ["G", "ON"]
+
+[N2_B]
+node_id = 9
+cal_id = 2
+flow_range = [1.2, 60.0]
+cal_factor = 1.0
+float_to_int_factor = 60
+valve_settings = ["F", "OFF"] 
