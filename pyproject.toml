@@ -63,18 +63,6 @@ build = "hatch build"
 [tool.pixi.environments]
 build = { features = ["build"], solve-group = "default" }
 
-[tool.hatch.build]
-sources = ["src"]
-
-[tool.hatch.build.targets.wheel]
-packages = ["nbs_sim"]
-
-[tool.hatch.build.targets.sdist]
-include = [
-    "src/nbs_sim/*.npz",
-    "src/nbs_sim/*.toml",
-]
-
 [tool.hatch.version]
 source = "vcs"
 
