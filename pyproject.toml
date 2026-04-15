@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
 
 [project]
 name = "nbs-sim"
-version = "0.1.0"
+dynamic = ["version"]
 description = "NBS Simulation IOC Generator"
 readme = "README.md"
 requires-python = ">=3.8"
@@ -18,15 +18,14 @@ classifiers = [
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Physics",
 ]
 dependencies = [
     "caproto",
-    "asyncio",
     "scipy",
     "nbs-bl",
     "numpy",
@@ -46,15 +45,38 @@ dev = [
 nbs-sim = "nbs_sim.beamline:main"
 
 [project.urls]
-Homepage = "https://github.com/nist-neutron/nbs-sim"
-Repository = "https://github.com/nist-neutron/nbs-sim"
-Documentation = "https://nbs-sim.readthedocs.io"
+Homepage = "https://github.com/xraygui/nbs-sim"
 
-[tool.setuptools.packages.find]
-where = ["src"]
+[tool.pixi.workspace]
+channels = ["conda-forge"]
+platforms = ["linux-64"]
 
-[tool.setuptools.package-data]
-"nbs_sim" = ["*.npz", "*.toml"]
+[tool.pixi.pypi-dependencies]
+nbs-sim = { path = ".", editable = true }
+
+[tool.pixi.feature.build.dependencies]
+hatch = "*"
+
+[tool.pixi.feature.build.tasks]
+build = "hatch build"
+
+[tool.pixi.environments]
+build = { features = ["build"], solve-group = "default" }
+
+[tool.hatch.build]
+sources = ["src"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["nbs_sim"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/nbs_sim/*.npz",
+    "src/nbs_sim/*.toml",
+]
+
+[tool.hatch.version]
+source = "vcs"
 
 [tool.black]
 line-length = 88
@@ -86,25 +108,3 @@ exclude = [
     ".eggs",
 ]
 
-[tool.mypy]
-python_version = "3.8"
-warn_return_any = true
-warn_unused_configs = true
-disallow_untyped_defs = true
-disallow_incomplete_defs = true
-check_untyped_defs = true
-disallow_untyped_decorators = true
-no_implicit_optional = true
-warn_redundant_casts = true
-warn_unused_ignores = true
-warn_no_return = true
-warn_unreachable = true
-strict_equality = true
-
-[[tool.mypy.overrides]]
-module = [
-    "caproto.*",
-    "scipy.*",
-    "numpy.*",
-]
-ignore_missing_imports = true 
