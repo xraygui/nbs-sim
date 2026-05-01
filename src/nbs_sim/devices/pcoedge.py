@@ -11,6 +11,8 @@ class PCOEdgeCam(PVGroup):
     bit_alignment_RBV = pvproperty(value=0, name="BitAlignment_RBV", read_only=True)
     pixel_rate = pvproperty(value=0, name="PixelRate")
     pixel_rate_RBV = pvproperty(value=0, name="PixelRate_RBV", read_only=True)
+    delay_time = pvproperty(value=0, name="DelayTime")
+    delay_time_RBV = pvproperty(value=0, name="DelayTime_RBV", read_only=True)
 
     @adc_mode.putter
     async def adc_mode(self, instance, value):
@@ -31,6 +33,10 @@ class PCOEdgeCam(PVGroup):
     @pixel_rate.putter
     async def pixel_rate(self, instance, value):
         await self.pixel_rate_RBV.write(value)
+
+    @delay_time.putter
+    async def delay_time(self, instance, value):
+        await self.delay_time_RBV.write(value)
 
 class PCOEdgeDetector(PVGroup):
     cam = SubGroup(PCOEdgeCam, prefix="cam1:")
