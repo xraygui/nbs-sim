@@ -44,3 +44,19 @@ class SSTShutter(PVGroup):
         await asyncio.sleep(self._delay)
         await self.state.write(value=self._openval)
         await self.transmission.write(value=1)
+
+class RSoXSShutter(PVGroup):
+    state = pvproperty(
+        value=0,
+        dtype=int,
+        read_only=True,
+        name="")
+    transmission = pvproperty(value=0, dtype=float, read_only=True)
+
+    @state.putter
+    async def state(self, instance, value):
+        if value == 0:
+            await self.transmission.write(value=0)
+        elif value == 1:
+            await self.transmission.write(value=1)
+        return value
