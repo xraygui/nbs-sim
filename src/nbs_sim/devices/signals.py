@@ -8,9 +8,19 @@ from caproto import ChannelType
 import numpy as np
 import time
 
+class Signal(PVGroup):
+    value = pvproperty(value=0.0, dtype=float, doc="Signal value", name="")
+
+    def __init__(self, prefix, *, value=0.0, parent=None, **kwargs):
+        super().__init__(prefix, parent=parent)
+        self.initial_value = value
+
+    @value.startup
+    async def value(self, instance, async_lib):
+        await instance.write(value=self.initial_value)
 
 class ConstantSignal(PVGroup):
-    """Simulated signal that maintains a constant value.
+    """Simulated signal that outputs a constant value with a period of 0.1 seconds
 
     Parameters
     ----------
@@ -27,6 +37,10 @@ class ConstantSignal(PVGroup):
     @value.scan(period=0.1)
     async def value(self, instance, async_lib):
         await instance.write(value=self._value)
+
+    @value.putter
+    async def value(self, instance, value):
+        self._value = value
 
 
 class SineSignal(PVGroup):
