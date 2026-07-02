@@ -148,7 +148,6 @@ class Slit(FakeMotor):
         else:
             return (rbv - self.trans_min) / (self.trans_max - self.trans_min)
 
-
 def QuadSlitsLimitFactory(*args, limits=None, **kwargs):
     """Factory function to create a simulated QuadSlits PVGroup.
 

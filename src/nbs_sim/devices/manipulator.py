@@ -41,6 +41,12 @@ class ManipulatorRSOXS(ManipulatorBase):
     z = SubGroup(FakeFMBOMotor, velocity=2, precision=3, prefix="Z}Mtr")
     r = SubGroup(FakeFMBOMotor, velocity=2, precision=3, prefix="Yaw}Mtr")
 
+class ManipulatorNEXAFS(ManipulatorBase):
+    x = SubGroup(FakeMotor, velocity=2, precision=3, prefix="SampX}Mtr")
+    y = SubGroup(FakeMotor, velocity=2, precision=3, prefix="SampY}Mtr")
+    z = SubGroup(FakeMotor, velocity=2, precision=3, prefix="SampZ}Mtr")
+    r = SubGroup(FakeMotor, velocity=2, precision=3, prefix="SampRot}Mtr")
+
 
 class MultiMesh(PVGroup):
     """

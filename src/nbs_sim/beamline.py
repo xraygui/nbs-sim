@@ -137,7 +137,7 @@ def main(argv=None):
             "Either --startup-dir or both --device-file and --config-file must be provided"
         )
 
-    config = generate_device_config(device_file, config_file)
+    config = generate_device_config(device_file, config_file, sim_mode=True)
     ioc = Beamline(config=config, **ioc_options)
 
     run(ioc.pvdb, **run_options)

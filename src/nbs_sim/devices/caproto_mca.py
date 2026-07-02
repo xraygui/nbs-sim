@@ -38,6 +38,7 @@ class MCASIM(PVGroup):
     CENTERS = pvproperty(value=np.zeros(MAXBINS, dtype=float), dtype=float)
     COUNT_TIME = pvproperty(value=1.0, record="ai", doc="ROI Count Time")
     ACQUIRE = pvproperty(value=0, doc="ACQUIRE")
+    MULTIPLIER = pvproperty(value=1.0, record="ai", doc="Signal Multiplier")
     LOAD_CAL = pvproperty(value=0)
 
     def __init__(self, prefix, *args, parent=None, **kwargs):
@@ -96,7 +97,7 @@ class MCASIM(PVGroup):
             ):
                 overlap = self.parent.distance_func(transmission=False)
                 energy = self.parent.energy.value
-                intensity = self.parent.intensity_func() * self.parent.yspl(energy)
+                intensity = self.parent.intensity_func() * self.parent.yspl(energy) * self.MULTIPLIER.value
                 counts = poisson.rvs(
                     overlap
                     * intensity
