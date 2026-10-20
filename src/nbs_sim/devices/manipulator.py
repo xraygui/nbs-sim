@@ -3,6 +3,7 @@ from caproto.server import PVGroup, SubGroup
 from nbs_bl.geometry.frames import make_regular_polygon
 from nbs_bl.geometry.linalg import vec
 import numpy as np
+from os.path import isabs, join
 
 
 class ManipulatorBase(PVGroup):
@@ -24,8 +25,34 @@ class ManipulatorBase(PVGroup):
         distances = [side.distance_to_beam(*beam_pos) for side in self.geometry]
         return np.min(distances)
 
-    def __init__(self, prefix, parent=None, **kwargs):
+    def motor_position(self):
+        return tuple(
+            m.motor.field_inst.user_readback_value.value
+            for m in (self.x, self.y, self.z, self.r)
+        )
+
+    def __init__(self, prefix, parent=None, sample_file=None, **kwargs):
         super().__init__(prefix, parent=parent)
+        self.sample_file = sample_file
+        self.sample_map = None
+
+    def load_sample_map(self, basedir=""):
+        """Load ``sample_file`` (relative paths are taken from ``basedir``)."""
+        if self.sample_file is None:
+            return
+        from ..samples import SampleMap
+
+        path = self.sample_file
+        if not isabs(path):
+            path = join(basedir, path)
+        print(f"Loading sample map {path}")
+        self.sample_map = SampleMap(path)
+
+    def current_sample(self):
+        """Id of the sample in the beam, or None if there is no map or no sample."""
+        if self.sample_map is None:
+            return None
+        return self.sample_map.sample_at(*self.motor_position())
 
 
 class Manipulator(ManipulatorBase):

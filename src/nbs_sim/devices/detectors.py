@@ -51,6 +51,9 @@ class DetectorKindMixin:
             return intensity
         elif self.kind == "sc":
             energy = self.parent.energy.value
+            sample_yield = self.parent.sample_yield(energy)
+            if sample_yield is not None:
+                return self.parent.intensity_func() * sample_yield
             overlap = self.parent.distance_func(transmission=False)
             intensity = self.parent.intensity_func() * self.parent.yspl(energy)
             return intensity * overlap

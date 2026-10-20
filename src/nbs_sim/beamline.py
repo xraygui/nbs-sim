@@ -27,8 +27,9 @@ def norm_erf(x, width=1):
 
 
 class Beamline(BeamlineModel, PVGroup):
-    def __init__(self, *args, config, **kwargs):
+    def __init__(self, *args, config, config_dir="", **kwargs):
         super().__init__(*args, devices={}, groups={}, roles={}, **kwargs)
+        self.config_dir = config_dir
         self.load_detector_data()
         devices, groups, roles = loadFromConfig(config, createIOCDevice, parent=self)
         self.loadDevices(devices, groups, roles)
@@ -43,6 +44,21 @@ class Beamline(BeamlineModel, PVGroup):
         refdata = np.load(join(dirpath, "all_ref.npz"))
         self.yspl = UnivariateSpline(data["x"], data["y"], s=0, ext=3)
         self.refspl = UnivariateSpline(refdata["x"], refdata["y"], s=0, ext=3)
+
+    def sample_manipulator(self):
+        if self.primary_manipulator is not None:
+            return self.primary_manipulator
+        return getattr(self, "primary_sampleholder", None)
+
+    def sample_yield(self, energy):
+        """Yield of the sample in the beam, or None if no sample map applies."""
+        manip = self.sample_manipulator()
+        if manip is None or getattr(manip, "sample_map", None) is None:
+            return None
+        sample_id = manip.current_sample()
+        if sample_id is None:
+            return None
+        return manip.sample_map.spectrum(sample_id, energy)
 
     def add_to_transmission(self, device):
         self.transmission_list.append(device)
@@ -78,6 +94,12 @@ class Beamline(BeamlineModel, PVGroup):
         self.configure_shutters()
         self.configure_apertures()
         self.configure_detectors()
+        self.configure_samples()
+
+    def configure_samples(self):
+        manip = self.sample_manipulator()
+        if manip is not None and hasattr(manip, "load_sample_map"):
+            manip.load_sample_map(self.config_dir)
 
     def configure_shutters(self):
         for key, device in self.shutters.items():
@@ -138,7 +160,7 @@ def main(argv=None):
         )
 
     config = generate_device_config(device_file, config_file, sim_mode=True)
-    ioc = Beamline(config=config, **ioc_options)
+    ioc = Beamline(config=config, config_dir=dirname(config_file), **ioc_options)
 
     run(ioc.pvdb, **run_options)
 
