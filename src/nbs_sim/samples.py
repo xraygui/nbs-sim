@@ -3,8 +3,9 @@
 A sample map is a sample CSV in the format nbs-bl's ``Standard4SidedBar``
 reads (``sample_id, sample_name, side, x1, y1, x2, y2, thickness, ...``) with
 an extra ``spectrum`` column naming a two-column ``energy,yield`` CSV, relative
-to the sample file. The same file can be loaded on the control side with
-``load_samples``.
+to the sample file, and an optional ``signal_scale`` column (default 1) that
+multiplies the sample's yield. It is the sim's ground truth: positions may
+differ from the sample file the beamline loads, to model a misplaced sample.
 """
 
 from os.path import dirname, isabs, join
@@ -67,6 +68,7 @@ class SampleMap:
                 "half_width": abs(x2 - x1) / 2.0,
                 "half_height": abs(y2 - y1) / 2.0,
                 "spline": UnivariateSpline(data[:, 0], data[:, 1], s=0, ext=3),
+                "signal_scale": float(sample.get("signal_scale", 1.0)),
             }
 
     def sample_at(self, x, y, z, r):
@@ -89,4 +91,5 @@ class SampleMap:
         return None if best is None else best[0]
 
     def spectrum(self, sample_id, energy):
-        return float(self.samples[sample_id]["spline"](energy))
+        s = self.samples[sample_id]
+        return s["signal_scale"] * float(s["spline"](energy))

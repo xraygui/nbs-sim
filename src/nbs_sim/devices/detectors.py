@@ -21,17 +21,37 @@ def make_intensity_class(pv_name="Intensity"):
             name=pv_name, value=0, dtype=float, read_only=True, doc="Intensity Value"
         )
         sigma = 0.05
+        period = 0.05
 
-        def __init__(self, prefix, *, parent=None, **kwargs):
+        def __init__(
+            self, prefix, *, parent=None, noise="gaussian", count_rate=40.0, **kwargs
+        ):
+            """
+            Parameters
+            ----------
+            noise : {"gaussian", "poisson"}
+                "gaussian" adds fixed noise of ``sigma``. "poisson" treats the
+                value as ``count_rate`` counts per second per unit of signal, so
+                relative noise falls as 1/sqrt(signal * dwell).
+            count_rate : float
+                Counts per second per unit of signal for ``noise="poisson"``.
+            """
             super().__init__(prefix, parent=parent)
+            self.noise = noise
+            self.count_rate = count_rate
 
         # Update faster than the shortest dwell nbs-bl scalars use (0.1 s);
         # at 0.5 s most short dwells saw no update and read NaN
-        @value.scan(period=0.05)
+        @value.scan(period=period)
         async def value(self, instance, async_lib):
             value = await self._read()
-            v = np.random.normal(value, self.sigma)
-            await instance.write(value=v)
+            await instance.write(value=self._add_noise(value))
+
+        def _add_noise(self, value):
+            if self.noise == "poisson":
+                scale = self.count_rate * self.period
+                return np.random.poisson(max(value, 0) * scale) / scale
+            return np.random.normal(value, self.sigma)
 
         async def _read(self):
             """Override this method to define how intensity is calculated."""
@@ -88,7 +108,7 @@ def make_detector_class(pv_name="Intensity"):
 
     class Detector(DetectorKindMixin, make_intensity_class(pv_name)):
         def __init__(self, prefix, kind="sc", parent=None, **kwargs):
-            super().__init__(prefix, parent=parent)
+            super().__init__(prefix, parent=parent, **kwargs)
             self.kind = kind
 
     return Detector
