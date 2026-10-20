@@ -46,6 +46,8 @@ class Beamline(BeamlineModel, PVGroup):
         self.refspl = UnivariateSpline(refdata["x"], refdata["y"], s=0, ext=3)
 
     def sample_manipulator(self):
+        # Profiles give the manipulator the nbs-bl role "primary_sampleholder";
+        # "primary_manipulator" is never set from config but kept for callers
         if self.primary_manipulator is not None:
             return self.primary_manipulator
         return getattr(self, "primary_sampleholder", None)
@@ -78,8 +80,9 @@ class Beamline(BeamlineModel, PVGroup):
         return base
 
     def distance_func(self, transmission=False):
-        if self.primary_manipulator is not None:
-            dist = self.primary_manipulator.distance_to_beam()
+        manip = self.sample_manipulator()
+        if manip is not None:
+            dist = manip.distance_to_beam()
         else:
             dist = 0
         if transmission:
