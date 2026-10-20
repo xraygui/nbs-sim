@@ -25,7 +25,9 @@ def make_intensity_class(pv_name="Intensity"):
         def __init__(self, prefix, *, parent=None, **kwargs):
             super().__init__(prefix, parent=parent)
 
-        @value.scan(period=0.5)
+        # Update faster than the shortest dwell nbs-bl scalars use (0.1 s);
+        # at 0.5 s most short dwells saw no update and read NaN
+        @value.scan(period=0.05)
         async def value(self, instance, async_lib):
             value = await self._read()
             v = np.random.normal(value, self.sigma)
