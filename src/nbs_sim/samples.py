@@ -32,7 +32,12 @@ class SampleMap:
         Motor (x, y, z) that puts the bar attachment point in the beam.
     depth_tolerance : float
         How far (mm) the beam point may sit off the sample surface along its
-        normal and still count as on the sample.
+        normal and still count as on the sample, i.e. a sample thickness.
+        While a sample counts as hit, sc reads its yield whether or not the
+        beam overlaps the bar, so a large value makes edges near samples
+        appear early.
+    misalignment : dict, optional
+        Bar misalignment, as for ``devices.manipulator.bar_misalignment``.
     """
 
     def __init__(
@@ -41,9 +46,15 @@ class SampleMap:
         width=24.5,
         length=215,
         attachment_point=(0, 0, 464),
-        depth_tolerance=5.0,
+        depth_tolerance=0.2,
+        misalignment=None,
     ):
         self.depth_tolerance = depth_tolerance
+        self.to_ideal = None
+        if misalignment:
+            from .devices.manipulator import bar_misalignment
+
+            _, self.to_ideal = bar_misalignment(misalignment, attachment_point[2])
         self.manip_frame = Frame(origin=np.zeros(3))
         attachment_frame = self.manip_frame.make_child_frame(origin=attachment_point)
         self.holder = Standard4SidedBar(width, length)
@@ -76,6 +87,8 @@ class SampleMap:
         xp, yp, zp = self.manip_frame.rotate_in_plane(
             (x, y, z), -np.radians(r), ax1=0, ax2=1
         )
+        if self.to_ideal is not None:
+            xp, yp, zp = self.to_ideal((xp, yp, zp))
         best = None
         for sample_id, s in self.samples.items():
             sx, sy, sz = self.manip_frame.to_frame((xp, yp, zp), s["frame"])
