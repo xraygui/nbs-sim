@@ -7,5 +7,8 @@ setup(
     name="nbs-sim",
     packages=find_packages(),
     package_data={"nbs-sim": ["*.npz"]},
-    entry_points={"console_scripts": ["nbs-sim = nbs_sim.beamline:main"]},
+    entry_points={"console_scripts": [
+        "nbs-sim = nbs_sim.beamline:main",
+        "nbs-map-ioc = nbs_sim.beam_map.ioc:main",
+    ]},
 )

@@ -43,6 +43,7 @@ dev = [
 
 [project.scripts]
 nbs-sim = "nbs_sim.beamline:main"
+nbs-map-ioc = "nbs_sim.beam_map.ioc:main"
 
 [project.urls]
 Homepage = "https://github.com/xraygui/nbs-sim"
