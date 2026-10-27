@@ -56,12 +56,12 @@ def compute_status(bmap, values, sim=False):
     beam_off = _beam_off(bmap, values, sim)
     status = {}
     for name in bmap.nodes:
-        # The reason is the most upstream blocker on the path, this node
-        # included: the last clear node is just upstream of it.
+        # The reason is the closest blocker on the path, this node included,
+        # so downstream blockers stay visible while an upstream one is shut.
         blockers = [own[n] for n in [name] + bmap.ancestors(name) if own[n]]
         blocking = own[name] is not None
         path_clear = len(blockers) == (1 if blocking else 0)
-        reason = blockers[-1] if blockers else beam_off or ""
+        reason = blockers[0] if blockers else beam_off or ""
         status[name] = NodeStatus(
             blocking=blocking,
             path_clear=path_clear,

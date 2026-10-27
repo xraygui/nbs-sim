@@ -108,7 +108,7 @@ Each node gets four PVs, named `{prefix}{node}:{status}`:
 | `Blocking` | bool | This node itself stops the beam. True when any `blocked_when` holds, or when the node has a `selected_when` that does not hold. |
 | `PathClear` | bool | Beam can reach this node: no node upstream of it is blocking. Does not include the node's own blocking. Roots are always path clear. |
 | `BeamExpected` | bool | `PathClear`, not `Blocking`, and global beam on. |
-| `Reason` | string | Empty when beam is expected. Otherwise why not: the most upstream blocking node on the path to this node, this node included (Jamie: trace upstream to the last clear node). If nothing blocks, it is the global beam reason. |
+| `Reason` | string | Empty when beam is expected. Otherwise why not: the closest blocking node on the path to this node, this node included. Jamie chose closest over most upstream so that every blocker is visible at a glance across the nodes, e.g. while everything except the front-end shutter is opened up in preparation. If nothing blocks, it is the global beam reason. |
 
 A blocking node stops beam for everything below it, whatever the reason it
 blocks. A branch that is not selected therefore makes all of its descendants
@@ -117,7 +117,9 @@ PathClear=0, so the logic works the same at any depth of branching.
 Worked example: front-end shutter closed (`Pos-Sts = 1`).
 `front_end`: Blocking=1, PathClear=1, BeamExpected=0, Reason
 "front_end blocked: NBS_SIM:fe_shutter:Pos-Sts = 1". `m1`, `branch1`,
-`branch2`: PathClear=0, BeamExpected=0, Reason the same as front_end's.
+`branch2`: PathClear=0, BeamExpected=0. `m1` and `branch1` give
+front_end's reason; with M1 X = 15, `branch2` gives its own closer reason,
+"branch2 not selected: ...".
 
 Worked example: shutter open, M1 X = 15. `branch1`: Blocking=0,
 PathClear=1, BeamExpected=1, Reason "". `branch2`: Blocking=1, PathClear=1,

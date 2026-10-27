@@ -20,7 +20,10 @@ def test_shutter_closed(bmap):
     for name in ["m1", "branch1", "branch2"]:
         assert st[name].path_clear is False
         assert st[name].beam_expected is False
-        assert st[name].reason == reason
+    assert st["m1"].reason == reason
+    assert st["branch1"].reason == reason
+    # branch2 names its own, closer, blocker so it stays visible
+    assert st["branch2"].reason == f"branch2 not selected: {M1X} = 15"
 
 
 def test_branch_selection(bmap):
@@ -59,14 +62,14 @@ def test_unselected_blocks_descendants(example_path):
     assert child.reason == f"branch2 not selected: {M1X} = 15"
 
 
-def test_most_upstream_blocker_wins(example_path):
+def test_closest_blocker_wins(example_path):
     import tomllib
 
     with open(example_path, "rb") as f:
         data = tomllib.load(f)
     data["nodes"]["branch2_child"] = {"upstream": "branch2"}
     st = compute_status(parse_map(data), {FE: 1, M1X: 15, BEAM: 1})
-    assert st["branch2_child"].reason == f"front_end blocked: {FE} = 1"
+    assert st["branch2_child"].reason == f"branch2 not selected: {M1X} = 15"
 
 
 def test_disconnected_fail_safe(bmap):
