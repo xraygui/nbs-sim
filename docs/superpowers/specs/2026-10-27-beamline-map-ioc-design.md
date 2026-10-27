@@ -136,6 +136,17 @@ disconnected counts as blocking, a `selected_when` PV that is disconnected
 counts as not selected, and a disconnected beam PV counts as beam off. The
 reason says which PV is disconnected.
 
+**Sim mode** (Jamie's request). Simulations often cover only part of the
+node map, so the IOC has a sim mode in which a disconnected PV is ignored:
+its condition is treated as non-blocking. A disconnected `blocked_when` PV
+does not block, a disconnected `selected_when` PV counts as selected, and a
+disconnected beam PV counts as beam on. It is turned on with
+`nbs-map-ioc --sim`, or when `NBS_SIM_MODE=1` is set (claude-pods already
+sets it for the sim). The IOC logs each PV it is ignoring once at startup
+and again if it later connects. Side effect: if every branch of a split keys
+off unsimulated PVs, all of them read as selected. That is accepted for
+testing (*my call*). Outside sim mode the fail-safe rules above apply.
+
 At startup the IOC serves its PVs at once, and nodes whose inputs have not
 connected yet show the disconnected reason until they do (*my call*). This
 keeps start order between the sim and the IOC unimportant.
