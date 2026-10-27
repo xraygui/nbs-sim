@@ -108,7 +108,7 @@ Each node gets four PVs, named `{prefix}{node}:{status}`:
 | `Blocking` | bool | This node itself stops the beam. True when any `blocked_when` holds, or when the node has a `selected_when` that does not hold. |
 | `PathClear` | bool | Beam can reach this node: no node upstream of it is blocking. Does not include the node's own blocking. Roots are always path clear. |
 | `BeamExpected` | bool | `PathClear`, not `Blocking`, and global beam on. |
-| `Reason` | string | Empty when beam is expected. Otherwise why not, found by walking from this node upstream to the nearest blocking node (this node included). If nothing blocks, it is the global beam reason. |
+| `Reason` | string | Empty when beam is expected. Otherwise why not: the most upstream blocking node on the path to this node, this node included (Jamie: trace upstream to the last clear node). If nothing blocks, it is the global beam reason. |
 
 A blocking node stops beam for everything below it, whatever the reason it
 blocks. A branch that is not selected therefore makes all of its descendants
