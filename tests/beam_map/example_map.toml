@@ -1,0 +1,21 @@
+[map]
+name = "claude"
+prefix = "NBS_MAP:"
+
+[beam]
+on_when = { pv = "NBS_SIM:beam_available", eq = 1 }
+
+[nodes.front_end]
+desc = "Front-end shutter"
+blocked_when = { pv = "NBS_SIM:fe_shutter:Pos-Sts", eq = 1 }
+
+[nodes.m1]
+upstream = "front_end"
+
+[nodes.branch1]
+upstream = "m1"
+selected_when = { pv = "XF:07IDA-OP{Mir:M1-Ax:X}Mtr_MON", between = [10, 20] }
+
+[nodes.branch2]
+upstream = "m1"
+selected_when = { pv = "XF:07IDA-OP{Mir:M1-Ax:X}Mtr_MON", between = [-10, -20] }
