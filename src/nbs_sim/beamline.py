@@ -27,6 +27,10 @@ def norm_erf(x, width=1):
 
 
 class Beamline(BeamlineModel, PVGroup):
+    # Stand-in for the facility's beam-available signal, so the beamline map
+    # IOC has a global beam condition. Write 0 to simulate a beam dump.
+    beam_available = pvproperty(value=1, dtype=int, name="beam_available")
+
     def __init__(self, *args, config, config_dir="", **kwargs):
         super().__init__(*args, devices={}, groups={}, roles={}, **kwargs)
         self.config_dir = config_dir
