@@ -104,14 +104,33 @@ class MapIOC:
         ):
             if event == "connection":
                 name = context.name
-                if data == "disconnected":
-                    self.values[name] = None
-                    log.warning("%s disconnected", name)
-                else:
+                if data == "connected":
                     log.info("%s connected", name)
+                    continue
             else:
-                self.values[context.pv.name] = float(data.data[0])
+                name = context.pv.name
+            await self.handle(name, data)
+
+    async def handle(self, name, data):
+        """
+        Take one update for input PV ``name``: an event with ``.data``, or
+        "disconnected". Never raises, so one bad update can't stop the
+        monitoring and freeze the statuses; a value that can't be read
+        counts as unknown, which fails safe.
+        """
+        try:
+            if isinstance(data, str):  # "disconnected"
+                self.values[name] = None
+                log.warning("%s disconnected", name)
+            else:
+                try:
+                    self.values[name] = float(data.data[0])
+                except (IndexError, TypeError, ValueError) as e:
+                    self.values[name] = None
+                    log.warning("%s: unreadable value %r (%s)", name, data.data, e)
             await self.update()
+        except Exception:
+            log.exception("Error handling an update for %s", name)
 
 
 def make_ioc(bmap, prefix=None, sim=False):
