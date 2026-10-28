@@ -64,7 +64,14 @@ class Beamline(BeamlineModel, PVGroup):
         sample_id = manip.current_sample()
         if sample_id is None:
             return None
-        return manip.sample_map.spectrum(sample_id, energy)
+        return manip.sample_map.spectrum(sample_id, energy, self.energy_resolution(energy))
+
+    def energy_resolution(self, energy):
+        """Mono resolution (FWHM, eV) from the slits role, or 0 without one."""
+        slit = getattr(self, "slits", None)
+        if slit is None or not hasattr(slit, "resolution"):
+            return 0.0
+        return slit.resolution(energy)
 
     def add_to_transmission(self, device):
         self.transmission_list.append(device)

@@ -16,6 +16,20 @@ from nbs_bl.geometry.affine import Frame, find_rotation
 from nbs_bl.geometry.bars import Standard4SidedBar
 
 
+# Gaussian quadrature nodes over +-3 sigma for gaussian_average
+_NODES = np.linspace(-3.0, 3.0, 25)
+_WEIGHTS = np.exp(-0.5 * _NODES**2)
+_WEIGHTS /= _WEIGHTS.sum()
+
+
+def gaussian_average(func, energy, fwhm):
+    """``func`` at ``energy``, convolved with a Gaussian of FWHM ``fwhm`` (eV)."""
+    if not fwhm or fwhm <= 0:
+        return float(func(energy))
+    sigma = fwhm / 2.3548
+    return float(np.dot(_WEIGHTS, func(energy + sigma * _NODES)))
+
+
 class SampleMap:
     """Find which sample on a 4-sided bar is in the beam.
 
@@ -103,6 +117,12 @@ class SampleMap:
                     best = (sample_id, abs(sz))
         return None if best is None else best[0]
 
-    def spectrum(self, sample_id, energy):
+    def spectrum(self, sample_id, energy, fwhm=0.0):
+        """
+        Yield of ``sample_id`` at ``energy``.
+
+        With ``fwhm`` > 0 (eV), the spectrum is convolved with a Gaussian of
+        that width, as a finite monochromator resolution would.
+        """
         s = self.samples[sample_id]
-        return s["signal_scale"] * float(s["spline"](energy))
+        return s["signal_scale"] * gaussian_average(s["spline"], energy, fwhm)

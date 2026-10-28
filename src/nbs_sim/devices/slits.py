@@ -227,3 +227,85 @@ def QuadSlitsLimitFactory(*args, limits=None, **kwargs):
         )
 
     return QuadSlitsSim(*args, **kwargs)
+
+
+class ExitSlit(FakeMotor):
+    """
+    Monochromator exit slit that sets both flux and energy resolution.
+
+    The motor is the slit gap in µm. Transmission rises linearly with the gap
+    up to ``saturation_gap`` (the source image size), then stays at 1. The
+    energy resolution (FWHM, eV) of a grating mono grows with the gap and with
+    the square of the photon energy::
+
+        dE = sqrt((dispersion * gap * (E / ref_energy)**2)**2 + floor**2)
+
+    ``dispersion`` is eV per µm of gap at ``ref_energy``. The beamline
+    convolves sample spectra with a Gaussian of this width, and the current
+    value is served on the ``Resolution`` PV.
+    """
+
+    transmission = pvproperty(
+        value=0.0, dtype=float, read_only=True, doc="Transmission through the slit"
+    )
+    resolution_pv = pvproperty(
+        value=0.0,
+        dtype=float,
+        read_only=True,
+        name="Resolution",
+        precision=4,
+        units="eV",
+        doc="Energy resolution (FWHM) at the current energy",
+    )
+
+    def __init__(
+        self,
+        *args,
+        dispersion=0.002,
+        ref_energy=285.0,
+        floor=0.02,
+        saturation_gap=200.0,
+        velocity=50,
+        precision=1,
+        user_limits=(5, 500),
+        value=50,
+        parent=None,
+        **kwargs,
+    ):
+        super().__init__(
+            *args,
+            velocity=velocity,
+            precision=precision,
+            user_limits=user_limits,
+            value=value,
+            parent=parent,
+            **kwargs,
+        )
+        self.dispersion = dispersion
+        self.ref_energy = ref_energy
+        self.floor = floor
+        self.saturation_gap = saturation_gap
+        self._beamline = parent
+
+    def gap(self):
+        return max(self.motor.field_inst.user_readback_value.value, 0.0)
+
+    def resolution(self, energy):
+        """Energy resolution (FWHM, eV) at ``energy`` for the current gap."""
+        width = self.dispersion * self.gap() * (energy / self.ref_energy) ** 2
+        return float(np.hypot(width, self.floor))
+
+    def _transmission(self):
+        return min(self.gap() / self.saturation_gap, 1.0)
+
+    @transmission.scan(period=0.1)
+    async def transmission(self, instance, async_lib):
+        await self.transmission.write(value=self._transmission())
+
+    @resolution_pv.scan(period=0.2)
+    async def resolution_pv(self, instance, async_lib):
+        energy_dev = getattr(self._beamline, "energy", None) if self._beamline is not None else None
+        energy = getattr(energy_dev, "value", None)
+        if energy is None:
+            energy = self.ref_energy
+        await self.resolution_pv.write(value=self.resolution(float(energy)))
