@@ -1,6 +1,8 @@
 import numpy as np
 from caproto.server import PVGroup, pvproperty
 
+from ..samples import gaussian_average
+
 
 def make_intensity_class(pv_name="Intensity"):
     """Create a base class for any device that reads intensity values.
@@ -80,9 +82,10 @@ class DetectorKindMixin:
             intensity = self.parent.intensity_func() * self.parent.yspl(energy)
             return intensity * overlap
         elif self.kind == "ref":
+            # The reference sits in the same beam, so it gets the same mono broadening
             energy = self.parent.energy.value
-            intensity = self.parent.intensity_func() * self.parent.refspl(energy)
-            return intensity
+            fwhm = self.parent.energy_resolution(energy)
+            return self.parent.intensity_func() * gaussian_average(self.parent.refspl, energy, fwhm)
         elif self.kind == "i1":
             overlap = self.parent.distance_func(transmission=True)
             intensity = self.parent.intensity_func()
