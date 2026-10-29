@@ -77,6 +77,9 @@ class Beamline(BeamlineModel, PVGroup):
         self.transmission_list.append(device)
 
     def current_func(self):
+        # A beam dump empties the ring, which also takes out every detector
+        if self.beam_available.value == 0:
+            return 0.0
         t = time.monotonic() % (300)
         if t < 270:
             current = 500 - 50 * t / 270
