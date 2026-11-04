@@ -4,7 +4,14 @@ Load and validate a beamline map file.
 The map file is TOML. ``[map]`` names the map and the PV prefix for the node
 status PVs, ``[beam]`` optionally gives the global beam condition, and each
 ``[nodes.<name>]`` table gives a node, the node directly upstream of it, and
-the conditions under which it blocks the beam or is selected.
+the conditions under which it blocks the beam or is selected. ``[status]``
+optionally names PVs, such as the ring mode, that clients read directly to
+report the beamline's state; the IOC does not watch them. Each entry is a
+table with ``pv`` and an optional ``desc``, or just the PV name::
+
+    [status.ring_status]
+    pv = "SR-OPS{}Mode-Sts"
+    desc = "Beam operation status"
 
 A condition is a table with ``pv`` and exactly one comparison::
 
@@ -40,7 +47,8 @@ _SYMBOLS = {"eq": "=", "ne": "!=", "lt": "<", "le": "<=", "gt": ">", "ge": ">="}
 _MAP_KEYS = {"name", "prefix", "desc"}
 _BEAM_KEYS = {"on_when"}
 _NODE_KEYS = {"upstream", "desc", "blocked_when", "selected_when"}
-_TOP_KEYS = {"map", "beam", "nodes"}
+_TOP_KEYS = {"map", "beam", "nodes", "status"}
+_STATUS_KEYS = {"pv", "desc"}
 
 
 @dataclass(frozen=True)
@@ -82,6 +90,7 @@ class BeamMap:
     prefix: str
     beam_on: list
     nodes: dict
+    status: dict = field(default_factory=dict)
 
     def children(self, name):
         return [n for n, node in self.nodes.items() if node.upstream == name]
@@ -148,6 +157,20 @@ def parse_map(data):
     _check_keys(meta, _MAP_KEYS, "[map]")
     beam = data.get("beam", {})
     _check_keys(beam, _BEAM_KEYS, "[beam]")
+    status = {}
+    specs = data.get("status", {})
+    if not isinstance(specs, dict):
+        raise MapError("[status]: must be a table")
+    for name, spec in specs.items():
+        where = f"[status.{name}]"
+        if isinstance(spec, str):
+            spec = {"pv": spec}
+        if not isinstance(spec, dict):
+            raise MapError(f"{where}: expected a table with pv, got {spec!r}")
+        _check_keys(spec, _STATUS_KEYS, where)
+        if not isinstance(spec.get("pv"), str):
+            raise MapError(f"{where}: needs a pv name")
+        status[name] = {"pv": spec["pv"], "desc": str(spec.get("desc", ""))}
 
     nodes = {}
     for name, spec in data.get("nodes", {}).items():
@@ -182,6 +205,7 @@ def parse_map(data):
         prefix=meta.get("prefix", ""),
         beam_on=_conditions(beam.get("on_when"), "[beam] on_when"),
         nodes=nodes,
+        status=status,
     )
 
 

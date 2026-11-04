@@ -83,3 +83,29 @@ def test_unknown_top_level_key():
     data["bean"] = {}
     with pytest.raises(MapError, match="bean"):
         parse_map(data)
+
+
+def test_status_pvs():
+    data = base(a={})
+    data["status"] = {
+        "ring_status": {"pv": "SR-OPS{}Mode-Sts", "desc": "Beam operation status"},
+        "hutch_status": {"pv": "XF:07ID{Hu:A}Sts:Enbl-Sts"},
+        "short": "X:Y",
+    }
+    assert parse_map(data).status == {
+        "ring_status": {"pv": "SR-OPS{}Mode-Sts", "desc": "Beam operation status"},
+        "hutch_status": {"pv": "XF:07ID{Hu:A}Sts:Enbl-Sts", "desc": ""},
+        "short": {"pv": "X:Y", "desc": ""},
+    }
+    assert parse_map(base(a={})).status == {}
+
+
+@pytest.mark.parametrize(
+    "spec, words",
+    [(3, "ring_status"), ({"desc": "x"}, "pv"), ({"pv": "A", "dsec": "x"}, "dsec")],
+)
+def test_bad_status(spec, words):
+    data = base(a={})
+    data["status"] = {"ring_status": spec}
+    with pytest.raises(MapError, match=words):
+        parse_map(data)
