@@ -18,6 +18,8 @@ import pickle
 from os.path import exists
 from scipy.stats import poisson, norm
 
+from ..sdk import start_beam
+
 
 class MCASIM(PVGroup):
     """
@@ -95,9 +97,10 @@ class MCASIM(PVGroup):
                 self.ACQUIRE.value != 0
                 and self._start_ts + self.COUNT_TIME.value < time.time()
             ):
+                beam = start_beam(self)
                 overlap = self.parent.distance_func(transmission=False)
-                energy = self.parent.energy.value
-                intensity = self.parent.intensity_func() * self.parent.yspl(energy) * self.MULTIPLIER.value
+                energy = beam.energy()
+                intensity = beam.flux() * self.parent.yspl(energy) * self.MULTIPLIER.value
                 counts = poisson.rvs(
                     overlap
                     * intensity

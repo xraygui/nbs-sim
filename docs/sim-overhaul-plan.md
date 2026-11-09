@@ -125,17 +125,17 @@ mode.
 flux = { pv = "NBS_SIM:Real-I", scale = 1.0 }
 
 [nodes.m1]
-transmission = { pv = "SIM:m1:Sim:Transmission" }   # e.g. mirror stripe and pitch
+transmission = { pv = "SIM:m1:transmission" }   # e.g. mirror stripe and pitch
 
 [nodes.mono]
 energy = { pv = "XF:07ID6-OP{Mono:DCM1-Ax:ENERGY_MON}" }
 bandwidth = { value = 0.25 }                        # fixed until the mono models it
 
 [nodes.exit_slit]
-transmission = { pv = "SIM:haxslt:Sim:Transmission" }
+transmission = { pv = "SIM:haxslt:transmission" }
 
 [nodes.sample]
-transmission = { pv = "SIM:manip:Sim:Transmission" } # 1 - overlap, for i1 downstream
+transmission = { pv = "SIM:manip:transmission" } # 1 - overlap, for i1 downstream
 ```
 
 ### Device side: a small SDK in nbs-sim
@@ -148,13 +148,18 @@ transmission = { pv = "SIM:manip:Sim:Transmission" } # 1 - overlap, for i1 downs
   interval, for exposures and sweeps during which a shutter may close. When
   the inputs are disconnected it falls back to configured defaults and logs
   the fact once, so a device still runs without a beam IOC.
-- **`Attenuator`** is a mixin that adds a read-only `Sim:Transmission`
-  pvproperty and a `set_transmission()` helper. Shutters, slits, gate valves,
-  filters and the manipulator use it, and the overlay points nodes at it.
+- **Attenuators** serve their own transmission, 0 to 1, on a
+  `{prefix}transmission` PV, which the overlay points nodes at. The sim's
+  shutters, gate valves and slits already did; the manipulator now does too
+  (the fraction of the beam that passes the sample bar). An earlier draft
+  had an `Attenuator` mixin and a `Sim:Transmission` name; the existing name
+  is kept instead, so no PVs move.
 - **Node binding.** devices.toml already places devices with `_node` (nbs-bl
-  uses it). Today `createIOCDevice` drops every `_` key, so the loader will
-  pass `_node` through as `node=`, and the map prefix from the sim config as
-  `map_prefix=`.
+  uses it). `createIOCDevice` sets it on the device as `beam_node`, and the
+  `Beamline` holds the map prefix. nbs-sim uses the beam map when the
+  startup dir has a `beam_map.sim.toml` overlay (or `--beam-map`;
+  `--no-beam-map` turns it off), the same file that turns the map IOC's
+  physics on.
 - **Samples.** The manipulator sim publishes `Sim:SampleID` and `Sim:Overlap`.
   A sample model file (today's sample map, plus optional per-sample XPS lines
   and other spectra) is loaded by any device that needs it. Devices share the
@@ -230,8 +235,7 @@ Done when the contract doc is merged.
 
 Status: implemented on nbs-sim branch `sim-physics` (2026-11-09), uncommitted.
 Slits and other attenuators feed the overlay once they publish
-`Sim:Transmission` in Phase 2; until then only blocking, ring current and
-fixed values reach the flux.
+`transmission` in Phase 2.
 
 - Extend `mapfile.py` with overlay loading (`--sim-overlay` or
   `beam_map.sim.toml` beside the map in sim mode) for `[beam] flux` and node
@@ -249,6 +253,9 @@ and without an overlay the IOC serves exactly today's PVs.
 
 ### Phase 1b: split out nbs-map-ioc
 
+Status: deferred (2026-11-09). Phase 2 went ahead with the map IOC still in
+nbs-sim; do the split once the physics PVs have settled.
+
 - Move `nbs_sim.beam_map` (map file parser, status, physics, IOC) into a new
   `nbs-map-ioc` package with its own CLI and tests. nbs-sim depends on it.
 - nbs-bl reads the tree through `nbs-map-ioc`'s map file parser instead of
@@ -257,6 +264,26 @@ and without an overlay the IOC serves exactly today's PVs.
 Done when a beamline runs the map IOC with only `nbs-map-ioc` installed.
 
 ### Phase 2: the SDK, and the old parent API on top of it
+
+Status: implemented on nbs-sim branch `sim-physics` (2026-11-09), tested
+with claude-pods, which gains a `startup/beam_map.sim.toml`. As built:
+
+- `nbs_sim.sdk` has `BeamInput` (map PVs at a node, a fallback for anything
+  missing or NaN, and `mean_flux` over an interval), `ParentBeam` (the old
+  `Beamline` computation) and `FixedBeam`; `beam_for(device)` picks one.
+  A BeamInput falls back to ParentBeam, so a pod keeps running if the map
+  IOC is down.
+- `DetectorKindMixin.kind_signal()` takes flux, energy and bandwidth from
+  the beam source. SRS570, RBD9103 and the MCA use it too instead of their
+  own copies; their `ref` now gets the mono broadening like the generic
+  detector's.
+- Not done yet: the sample model still comes from the parent `Beamline`
+  (`sample_yield`, `distance_func`, the `yspl`/`refspl` splines), so sc, ref
+  and i1 detectors need nbs-sim's process. Publishing `Sim:SampleID` and
+  `Sim:Overlap` for out-of-process devices waits for Phase 5, which needs
+  it. HAXPES is not checked.
+
+The original task list:
 
 - Add `nbs_sim.sdk` (`BeamInput`, `Attenuator`, sample model reader) and pass
   `_node` and the map prefix through `createIOCDevice`.
@@ -319,7 +346,7 @@ the DCM energy, and closing a shutter mid-sweep lowers the counts.
 
 ### Later: undulator and mono behaviour
 
-- The undulator sim (now in `sst_base.sim`) reports a `Sim:Transmission` for
+- The undulator sim (now in `sst_base.sim`) reports a `transmission` for
   gap or harmonic mismatch with the mono energy, and the mono reports its
   bandwidth and harmonic content, replacing the fixed overlay values. Both
   fit the node model without changing the PV contract.
@@ -344,9 +371,10 @@ Settled 2026-11-09.
    for a separate `nbs-sim-sst`.
 5. **RBD9103 and K2600B stay in nbs-sim** as generic instruments. GreatEyes
    goes to rsoxs and PCO Edge to vppem.
-6. **The map IOC becomes its own package right after Phase 1** (Phase 1b).
-   Phase 1 changes the map file schema and the IOC together, which is easier
-   in one repo; after that, production beamlines should not need nbs-sim.
+6. **The map IOC becomes its own package** (Phase 1b), but not right after
+   Phase 1 as first planned: it is deferred until the physics PVs settle.
+   Changing the map file schema and the IOC together is easier in one repo;
+   after that, production beamlines should not need nbs-sim.
 
 ## Risks
 

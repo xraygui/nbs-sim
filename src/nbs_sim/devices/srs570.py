@@ -172,23 +172,7 @@ def SRSADCFactory(prefix, *args, srs_prefix=None, **kwargs):
             float
                 Current value in Amperes
             """
-            # Get base intensity from parent beamline
-            if self.kind == "i0":
-                intensity = self.parent.intensity_func()
-            elif self.kind == "sc":
-                energy = self.parent.energy.value
-                overlap = self.parent.distance_func(transmission=False)
-                intensity = self.parent.intensity_func() * self.parent.yspl(energy)
-                intensity = intensity * overlap
-            elif self.kind == "ref":
-                energy = self.parent.energy.value
-                intensity = self.parent.intensity_func() * self.parent.refspl(energy)
-            elif self.kind == "i1":
-                overlap = self.parent.distance_func(transmission=True)
-                intensity = self.parent.intensity_func()
-                intensity = intensity * overlap
-            else:
-                intensity = self.parent.intensity_func()
+            intensity = self.kind_signal()
 
             noise = np.random.normal(0, intensity * 0.01)  # 1% noise on signal
             intensity += noise

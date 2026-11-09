@@ -37,6 +37,8 @@ def createIOCDevice(device_key, info, cls=None, parent=None, **kwargs):
     prefix = device_info.pop("prefix", "")
     print(f"Loading {prefix}")
     device = cls(prefix, parent=parent, **device_info)
+    # The device's node in the beam map, for nbs_sim.sdk.beam_for
+    device.beam_node = info.get("_node")
     if parent is not None:
         parent.pvdb.update(**device.pvdb)
     return device

@@ -2,6 +2,7 @@ import numpy as np
 from caproto.server import PVGroup, pvproperty
 
 from ..samples import gaussian_average
+from ..sdk import start_beam
 
 
 def make_intensity_class(pv_name="Intensity"):
@@ -66,33 +67,37 @@ class DetectorKindMixin:
     """Mixin that provides detector-specific intensity calculations.
 
     This mixin defines how different kinds of detectors calculate their
-    intensity values based on their type (i0, sc, ref, i1).
+    intensity values based on their type (i0, sc, ref, i1). Flux, energy and
+    bandwidth come from the device's beam source (``nbs_sim.sdk``); the
+    sample and the reference spectra still come from the parent beamline.
     """
 
-    async def _read(self):
+    def kind_signal(self):
+        """The detector's signal for its kind, before noise. Call from a
+        coroutine, so the beam subscriptions can start."""
+        beam = start_beam(self)
+        flux = beam.flux()
         if self.kind == "i0":
-            intensity = self.parent.intensity_func()
-            return intensity
+            return flux
         elif self.kind == "sc":
-            energy = self.parent.energy.value
-            sample_yield = self.parent.sample_yield(energy)
+            energy = beam.energy()
+            sample_yield = self.parent.sample_yield(energy, beam.bandwidth(energy))
             if sample_yield is not None:
-                return self.parent.intensity_func() * sample_yield
+                return flux * sample_yield
             overlap = self.parent.distance_func(transmission=False)
-            intensity = self.parent.intensity_func() * self.parent.yspl(energy)
-            return intensity * overlap
+            return flux * self.parent.yspl(energy) * overlap
         elif self.kind == "ref":
             # The reference sits in the same beam, so it gets the same mono broadening
-            energy = self.parent.energy.value
-            fwhm = self.parent.energy_resolution(energy)
-            return self.parent.intensity_func() * gaussian_average(self.parent.refspl, energy, fwhm)
+            energy = beam.energy()
+            fwhm = beam.bandwidth(energy)
+            return flux * gaussian_average(self.parent.refspl, energy, fwhm)
         elif self.kind == "i1":
-            overlap = self.parent.distance_func(transmission=True)
-            intensity = self.parent.intensity_func()
-            return intensity * overlap
+            return flux * self.parent.distance_func(transmission=True)
         else:
-            intensity = self.parent.intensity_func()
-            return intensity
+            return flux
+
+    async def _read(self):
+        return self.kind_signal()
 
 
 def make_detector_class(pv_name="Intensity"):

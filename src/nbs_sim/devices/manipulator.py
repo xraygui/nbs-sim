@@ -1,9 +1,11 @@
 from .motors import FakeMotor, FakeFMBOMotor
-from caproto.server import PVGroup, SubGroup
+from caproto.server import PVGroup, SubGroup, pvproperty
 from nbs_bl.geometry.frames import make_regular_polygon
 from nbs_bl.geometry.linalg import vec
 import numpy as np
 from os.path import isabs, join
+
+from ..samples import norm_erf
 
 
 def bar_misalignment(misalignment, attachment_z=464):
@@ -53,6 +55,17 @@ class ManipulatorBase(PVGroup):
 
     geometry = make_regular_polygon(24.5, 215, 4)
     origin = vec(0, 0, 464, 0)
+
+    # For a beam map node at the sample, so detectors downstream see the
+    # beam the sample lets through.
+    transmission = pvproperty(
+        value=1.0, dtype=float, read_only=True,
+        doc="Fraction of the beam that passes the sample bar",
+    )
+
+    @transmission.scan(period=0.2)
+    async def transmission(self, instance, async_lib):
+        await instance.write(value=float(norm_erf(self.distance_to_beam(), 1)))
 
     def distance_to_beam(self):
         mp = (

@@ -9,12 +9,13 @@ from caproto.server import (
 import time
 from .load import createIOCDevice
 import numpy as np
-from scipy.special import erf
-from os.path import join, dirname
+from os.path import join, dirname, exists
 from scipy.interpolate import UnivariateSpline
 from nbs_core.beamline import BeamlineModel
 from nbs_core.autoconf import generate_device_config
 from nbs_core.autoload import loadFromConfig
+from .beam_map.mapfile import default_overlay, load_map
+from .samples import norm_erf
 
 try:
     import tomllib
@@ -22,24 +23,36 @@ except ModuleNotFoundError:
     import tomli as tomllib
 
 
-def norm_erf(x, width=1):
-    return 0.5 * (erf(2.0 * x / width) + 1)
-
-
 class Beamline(BeamlineModel, PVGroup):
     # Stand-in for the facility's beam-available signal, so the beamline map
     # IOC has a global beam condition. Write 0 to simulate a beam dump.
     beam_available = pvproperty(value=1, dtype=int, name="beam_available")
 
-    def __init__(self, *args, config, config_dir="", **kwargs):
+    def __init__(self, *args, config, config_dir="", beam_map=None, **kwargs):
+        """
+        ``beam_map`` is a BeamMap whose IOC serves physics PVs. Devices with
+        a ``_node`` then read their beam from it (see ``nbs_sim.sdk``).
+        """
         super().__init__(*args, devices={}, groups={}, roles={}, **kwargs)
         self.config_dir = config_dir
+        self.beam_map = beam_map
+        self.beam_map_prefix = beam_map.prefix if beam_map is not None else None
         self.load_detector_data()
         devices, groups, roles = loadFromConfig(config, createIOCDevice, parent=self)
         self.loadDevices(devices, groups, roles)
         self.transmission_list = []
 
         self.configure_beamline()
+        self.check_nodes(devices)
+
+    def check_nodes(self, devices):
+        """Warn about devices placed on nodes the beam map lacks."""
+        if self.beam_map is None:
+            return
+        for key, device in devices.items():
+            node = getattr(device, "beam_node", None)
+            if node and node not in self.beam_map.nodes:
+                print(f"Warning: {key} is on node {node!r}, not in the beam map")
 
     def load_detector_data(self):
         dirpath = dirname(__file__)
@@ -56,15 +69,18 @@ class Beamline(BeamlineModel, PVGroup):
             return self.primary_manipulator
         return getattr(self, "primary_sampleholder", None)
 
-    def sample_yield(self, energy):
-        """Yield of the sample in the beam, or None if no sample map applies."""
+    def sample_yield(self, energy, fwhm=None):
+        """Yield of the sample in the beam, or None if no sample map applies.
+        ``fwhm`` is the energy resolution, by default the slits'."""
         manip = self.sample_manipulator()
         if manip is None or getattr(manip, "sample_map", None) is None:
             return None
         sample_id = manip.current_sample()
         if sample_id is None:
             return None
-        return manip.sample_map.spectrum(sample_id, energy, self.energy_resolution(energy))
+        if fwhm is None:
+            fwhm = self.energy_resolution(energy)
+        return manip.sample_map.spectrum(sample_id, energy, fwhm)
 
     def energy_resolution(self, energy):
         """Mono resolution (FWHM, eV) from the slits role, or 0 without one."""
@@ -157,6 +173,16 @@ def main(argv=None):
         help="Location of device file. Required if --startup-dir is not provided.",
     )
     parser.add_argument(
+        "--beam-map",
+        help="Beam map whose IOC serves physics PVs (default: the startup "
+        "dir's beam_map.toml, if it has a beam_map.sim.toml overlay)",
+    )
+    parser.add_argument(
+        "--no-beam-map",
+        action="store_true",
+        help="Compute the beam in this process even if there is a beam map",
+    )
+    parser.add_argument(
         "--config-file",
         required=False,
         help="Location of simulation file. Required if --startup-dir is not provided.",
@@ -176,8 +202,20 @@ def main(argv=None):
             "Either --startup-dir or both --device-file and --config-file must be provided"
         )
 
+    map_file = args.beam_map
+    if map_file is None and args.startup_dir:
+        candidate = join(args.startup_dir, "beam_map.toml")
+        if exists(candidate) and default_overlay(candidate):
+            map_file = candidate
+    beam_map = None
+    if map_file is not None and not args.no_beam_map:
+        print(f"Reading the beam from the beam map IOC for {map_file}")
+        beam_map = load_map(map_file)
+
     config = generate_device_config(device_file, config_file, sim_mode=True)
-    ioc = Beamline(config=config, config_dir=dirname(config_file), **ioc_options)
+    ioc = Beamline(
+        config=config, config_dir=dirname(config_file), beam_map=beam_map, **ioc_options
+    )
 
     run(ioc.pvdb, **run_options)
 

@@ -12,6 +12,7 @@ from os.path import dirname, isabs, join
 
 import numpy as np
 from scipy.interpolate import UnivariateSpline
+from scipy.special import erf
 from nbs_bl.geometry.affine import Frame, find_rotation
 from nbs_bl.geometry.bars import Standard4SidedBar
 
@@ -20,6 +21,12 @@ from nbs_bl.geometry.bars import Standard4SidedBar
 _NODES = np.linspace(-3.0, 3.0, 25)
 _WEIGHTS = np.exp(-0.5 * _NODES**2)
 _WEIGHTS /= _WEIGHTS.sum()
+
+
+def norm_erf(x, width=1):
+    """Smooth step from 0 to 1 across x = 0: the fraction of a beam of
+    ``width`` that a sample edge at distance ``x`` intercepts."""
+    return 0.5 * (erf(2.0 * x / width) + 1)
 
 
 def gaussian_average(func, energy, fwhm):
