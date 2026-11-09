@@ -19,9 +19,27 @@ A condition is a table with ``pv`` and exactly one comparison::
     { pv = "XF:07IDA-OP{Mir:M1-Ax:X}Mtr_MON", between = [10, 20] }
 
 ``between`` is inclusive and takes its bounds in either order.
+
+A sim overlay file adds physics inputs to a map, for the beam IOC's flux,
+energy and bandwidth PVs (see ``physics``). It names no conditions, so it
+can never change what the map's status PVs say::
+
+    [beam]
+    flux = { pv = "NBS_SIM:Real-I", scale = 1.0 }
+
+    [nodes.m1]
+    transmission = { pv = "NBS_SIM:m1:Sim:Transmission" }
+
+    [nodes.mono]
+    energy = { pv = "XF:07ID1-OP{Mono:PGM1-Ax:Energy}Mtr_MON" }
+    bandwidth = { value = 0.25 }
+
+An input is a table with either ``pv`` (and an optional ``scale`` it is
+multiplied by) or a fixed ``value``. A bare number is short for ``value``.
 """
 
 import operator
+import os
 from dataclasses import dataclass, field
 
 try:
@@ -49,6 +67,12 @@ _BEAM_KEYS = {"on_when"}
 _NODE_KEYS = {"upstream", "desc", "blocked_when", "selected_when"}
 _TOP_KEYS = {"map", "beam", "nodes", "status"}
 _STATUS_KEYS = {"pv", "desc"}
+_OVERLAY_TOP_KEYS = {"beam", "nodes"}
+_OVERLAY_BEAM_KEYS = {"flux"}
+_OVERLAY_NODE_KEYS = {"transmission", "energy", "bandwidth"}
+_INPUT_KEYS = {"pv", "scale", "value"}
+# The physics PVs put the source flux under this name, beside the nodes.
+SOURCE = "Source"
 
 
 @dataclass(frozen=True)
@@ -75,6 +99,41 @@ class Condition:
         return f"{self.pv} {_SYMBOLS[self.op]} {self.value:g}"
 
 
+@dataclass(frozen=True)
+class Input:
+    """A physics input: a PV times ``scale``, or a fixed ``value``."""
+
+    pv: str = None
+    value: float = None
+    scale: float = 1.0
+
+    def read(self, values):
+        """The input's value, or None when its PV is unknown."""
+        if self.pv is None:
+            return self.value
+        x = values.get(self.pv)
+        if x is None or x != x:  # disconnected or NaN
+            return None
+        return x * self.scale
+
+
+@dataclass
+class Physics:
+    """Physics inputs from a sim overlay: the source flux and, per node, its
+    transmission, the energy and the bandwidth it sets."""
+
+    flux: Input = None
+    transmission: dict = field(default_factory=dict)
+    energy: dict = field(default_factory=dict)
+    bandwidth: dict = field(default_factory=dict)
+
+    def inputs(self):
+        out = [self.flux] if self.flux else []
+        for table in (self.transmission, self.energy, self.bandwidth):
+            out += table.values()
+        return out
+
+
 @dataclass
 class Node:
     name: str
@@ -91,6 +150,7 @@ class BeamMap:
     beam_on: list
     nodes: dict
     status: dict = field(default_factory=dict)
+    physics: Physics = None
 
     def children(self, name):
         return [n for n, node in self.nodes.items() if node.upstream == name]
@@ -108,7 +168,10 @@ class BeamMap:
         conds = list(self.beam_on)
         for node in self.nodes.values():
             conds += node.blocked_when + node.selected_when
-        return {c.pv for c in conds}
+        pvs = {c.pv for c in conds}
+        if self.physics is not None:
+            pvs |= {i.pv for i in self.physics.inputs() if i.pv is not None}
+        return pvs
 
 
 def _check_keys(table, allowed, where):
@@ -150,6 +213,42 @@ def _conditions(spec, where):
     return [_condition(s, where) for s in specs]
 
 
+def _input(spec, where):
+    if not isinstance(spec, dict):
+        spec = {"value": spec}
+    _check_keys(spec, _INPUT_KEYS, where)
+    if ("pv" in spec) == ("value" in spec):
+        raise MapError(f"{where}: an input needs either pv or value")
+    if "value" in spec:
+        if "scale" in spec:
+            raise MapError(f"{where}: scale only applies to a pv")
+        return Input(value=float(_number(spec["value"], where)))
+    if not isinstance(spec["pv"], str):
+        raise MapError(f"{where}: pv must be a name, got {spec['pv']!r}")
+    return Input(pv=spec["pv"], scale=float(_number(spec.get("scale", 1.0), where)))
+
+
+def parse_overlay(bmap, data):
+    """Add the physics inputs of a parsed sim overlay to ``bmap``."""
+    _check_keys(data, _OVERLAY_TOP_KEYS, "sim overlay")
+    beam = data.get("beam", {})
+    _check_keys(beam, _OVERLAY_BEAM_KEYS, "sim overlay [beam]")
+    physics = Physics()
+    if "flux" in beam:
+        physics.flux = _input(beam["flux"], "sim overlay [beam] flux")
+    for name, spec in data.get("nodes", {}).items():
+        where = f"sim overlay node {name}"
+        if name not in bmap.nodes:
+            raise MapError(f"{where}: not a node of map {bmap.name!r}")
+        if not isinstance(spec, dict):
+            raise MapError(f"{where}: must be a table")
+        _check_keys(spec, _OVERLAY_NODE_KEYS, where)
+        for key, inp in spec.items():
+            getattr(physics, key)[name] = _input(inp, f"{where} {key}")
+    bmap.physics = physics
+    return bmap
+
+
 def parse_map(data):
     """Build a BeamMap from the parsed TOML of a map file."""
     _check_keys(data, _TOP_KEYS, "map file")
@@ -188,6 +287,8 @@ def parse_map(data):
             ),
         )
 
+    if SOURCE in nodes:
+        raise MapError(f"node name {SOURCE!r} is reserved for the source flux PV")
     for name, node in nodes.items():
         if node.upstream is not None and node.upstream not in nodes:
             raise MapError(f"node {name}: upstream {node.upstream!r} is not a node")
@@ -209,11 +310,28 @@ def parse_map(data):
     )
 
 
-def load_map(path):
-    """Read and validate the map file at ``path``."""
+def load_map(path, overlay=None):
+    """Read and validate the map file at ``path``, and the sim overlay file
+    at ``overlay`` if given."""
     with open(path, "rb") as f:
         data = tomllib.load(f)
     try:
-        return parse_map(data)
+        bmap = parse_map(data)
     except MapError as e:
         raise MapError(f"{path}: {e}") from None
+    if overlay is not None:
+        with open(overlay, "rb") as f:
+            data = tomllib.load(f)
+        try:
+            parse_overlay(bmap, data)
+        except MapError as e:
+            raise MapError(f"{overlay}: {e}") from None
+    return bmap
+
+
+def default_overlay(path):
+    """The sim overlay beside the map at ``path`` (``beam_map.toml`` ->
+    ``beam_map.sim.toml``), or None if there is none."""
+    root, ext = os.path.splitext(path)
+    candidate = f"{root}.sim{ext}"
+    return candidate if os.path.exists(candidate) else None

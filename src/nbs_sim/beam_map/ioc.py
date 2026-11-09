@@ -8,6 +8,11 @@ read-only status PVs per node: ``{prefix}{node}:Blocking``, ``:PathClear``,
 Run with ``nbs-map-ioc --map beam_map.toml``. ``--sim``, or ``NBS_SIM_MODE=1``
 in the environment, ignores disconnected PVs instead of failing safe.
 
+In sim mode the IOC also reads a sim overlay (``--sim-overlay``, or
+``beam_map.sim.toml`` beside the map) if there is one, and then serves four
+more read-only PVs per node, ``:Transmission``, ``:Flux``, ``:Energy`` and
+``:Bandwidth``, plus ``{prefix}Source:Flux``. See ``physics``.
+
 The PV database is built directly rather than from a PVGroup, because
 pvproperty names are expanded as format strings and input PV names such as
 ``XF:07IDA-OP{Mir:M1-Ax:X}Mtr_MON`` would break that.
@@ -17,11 +22,19 @@ import argparse
 import logging
 import os
 
-from caproto import AccessRights, ChannelChar, ChannelEnum, ChannelString, ChannelType
+from caproto import (
+    AccessRights,
+    ChannelChar,
+    ChannelDouble,
+    ChannelEnum,
+    ChannelString,
+    ChannelType,
+)
 from caproto.asyncio.client import Context
 from caproto.server import run
 
-from .mapfile import load_map
+from .mapfile import SOURCE, MapError, default_overlay, load_map
+from .physics import compute_physics, same
 from .status import compute_status
 
 log = logging.getLogger(__name__)
@@ -31,6 +44,12 @@ STATUSES = {
     "PathClear": "path_clear",
     "BeamExpected": "beam_expected",
     "Reason": "reason",
+}
+PHYSICS = {
+    "Transmission": "transmission",
+    "Flux": "flux",
+    "Energy": "energy",
+    "Bandwidth": "bandwidth",
 }
 REASON_MAX_LENGTH = 256
 
@@ -49,6 +68,10 @@ class ReadOnlyChar(_ReadOnly, ChannelChar):
 
 
 class ReadOnlyString(_ReadOnly, ChannelString):
+    pass
+
+
+class ReadOnlyDouble(_ReadOnly, ChannelDouble):
     pass
 
 
@@ -76,6 +99,18 @@ class MapIOC:
                     )
                 self.channels[(node, field)] = channel
                 self.pvdb[f"{self.prefix}{node}:{suffix}"] = channel
+        self.physics = None
+        if bmap.physics is not None:
+            self.physics, self.source = compute_physics(
+                bmap, self.status, self.values, sim
+            )
+            self.source_channel = ReadOnlyDouble(value=self.source, precision=4)
+            self.pvdb[f"{self.prefix}{SOURCE}:Flux"] = self.source_channel
+            for node, phys in self.physics.items():
+                for suffix, field in PHYSICS.items():
+                    channel = ReadOnlyDouble(value=getattr(phys, field), precision=4)
+                    self.channels[(node, field)] = channel
+                    self.pvdb[f"{self.prefix}{node}:{suffix}"] = channel
 
     async def update(self):
         """Recompute every node and write the status PVs that changed."""
@@ -89,6 +124,17 @@ class MapIOC:
                     value = "On" if value else "Off"
                 await self.channels[(node, field)].write(value)
         self.status = new
+        if self.physics is None:
+            return
+        physics, source = compute_physics(self.bmap, new, self.values, self.sim)
+        if not same(source, self.source):
+            await self.source_channel.write(source)
+        for node, phys in physics.items():
+            for field in PHYSICS.values():
+                value = getattr(phys, field)
+                if not same(value, getattr(self.physics[node], field)):
+                    await self.channels[(node, field)].write(value)
+        self.physics, self.source = physics, source
 
     async def monitor(self, async_lib):
         """Startup hook: subscribe to every input PV and track it."""
@@ -148,13 +194,30 @@ def main(argv=None):
         action="store_true",
         help="Ignore disconnected PVs (also on when NBS_SIM_MODE=1)",
     )
+    parser.add_argument(
+        "--sim-overlay",
+        default=None,
+        help="Sim overlay file with physics inputs (sim mode only; default: "
+        "<map>.sim.toml beside the map, if it exists)",
+    )
     parser.add_argument("--list-pvs", action="store_true", help="Log PV names")
     parser.add_argument("--interfaces", nargs="+", default=None)
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO)
 
     sim = args.sim or os.environ.get("NBS_SIM_MODE", "") == "1"
-    ioc = make_ioc(load_map(args.map), prefix=args.prefix, sim=sim)
+    overlay = args.sim_overlay
+    if overlay is not None and not sim:
+        parser.error("--sim-overlay needs sim mode (--sim or NBS_SIM_MODE=1)")
+    if overlay is None and sim:
+        overlay = default_overlay(args.map)
+    if overlay is not None:
+        log.info("Physics inputs from sim overlay %s", overlay)
+    try:
+        bmap = load_map(args.map, overlay)
+    except MapError as e:
+        parser.error(str(e))
+    ioc = make_ioc(bmap, prefix=args.prefix, sim=sim)
     run(
         ioc.pvdb,
         interfaces=args.interfaces,

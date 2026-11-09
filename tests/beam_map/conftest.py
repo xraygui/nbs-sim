@@ -23,11 +23,17 @@ HERE = Path(__file__).parent
 SRC = HERE.parents[1] / "src"
 
 EXAMPLE = Path(__file__).parent / "example_map.toml"
+OVERLAY = Path(__file__).parent / "example_overlay.toml"
 
 
 @pytest.fixture
 def example_path():
     return str(EXAMPLE)
+
+
+@pytest.fixture
+def overlay_path():
+    return str(OVERLAY)
 
 
 def _spawn(args, extra_env=None):

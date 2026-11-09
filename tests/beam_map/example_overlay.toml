@@ -1,0 +1,15 @@
+# Sim overlay for example_map.toml: physics inputs only.
+# Named so the map IOC does not find it on its own (that would be
+# example_map.sim.toml); tests pass it with --sim-overlay.
+
+[beam]
+flux = { pv = "NBS_SIM:Real-I", scale = 2.0 }
+
+[nodes.m1]
+# m1 stands in for a mirror and a mono here.
+transmission = { pv = "NBS_SIM:m1:Sim:Transmission" }
+energy = { pv = "NBS_SIM:mono:Energy" }
+bandwidth = 0.25
+
+[nodes.branch2]
+bandwidth = { value = 0.1 }

@@ -85,3 +85,24 @@ def test_status_pvs_are_read_only(procs, ca):
     except Exception:
         pass
     assert read(ca, "NBS_MAP:branch1:BeamExpected") == 1
+
+
+def test_physics_pvs_follow_inputs(procs, ca, overlay_path):
+    procs.start_inputs()
+    procs.start_map_ioc("--sim", "--sim-overlay", overlay_path)
+    assert wait_for(equals(ca, "NBS_MAP:branch1:Flux", 400.0))
+    assert read(ca, "NBS_MAP:Source:Flux") == 800.0
+    assert read(ca, "NBS_MAP:branch1:Energy") == 500.0
+    assert read(ca, "NBS_MAP:branch1:Bandwidth") == 0.25
+    write(ca, "NBS_SIM:Real-I", 100.0)
+    assert wait_for(equals(ca, "NBS_MAP:branch1:Flux", 100.0), timeout=3)
+    write(ca, FE, 1)
+    assert wait_for(equals(ca, "NBS_MAP:branch1:Flux", 0.0), timeout=3)
+    assert read(ca, "NBS_MAP:front_end:Transmission") == 0.0
+    # The status PVs are unchanged by the overlay.
+    assert read(ca, "NBS_MAP:front_end:Blocking") == 1
+
+
+def test_overlay_needs_sim_mode(procs, overlay_path):
+    procs.start_map_ioc("--sim-overlay", overlay_path)
+    assert procs.map_ioc.wait(30) == 2

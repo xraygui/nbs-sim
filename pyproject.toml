@@ -61,8 +61,16 @@ hatch = "*"
 [tool.pixi.feature.build.tasks]
 build = "hatch build"
 
+[tool.pixi.feature.test.dependencies]
+pytest = "*"
+pytest-asyncio = "*"
+
+[tool.pixi.feature.test.tasks]
+test = "pytest tests"
+
 [tool.pixi.environments]
 build = { features = ["build"], solve-group = "default" }
+test = { features = ["test"], solve-group = "default" }
 
 [tool.hatch.version]
 source = "vcs"

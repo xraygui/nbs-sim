@@ -38,7 +38,7 @@ def _blocked(node, values, sim):
     return None
 
 
-def _beam_off(bmap, values, sim):
+def beam_off_reason(bmap, values, sim):
     """Return the reason the global beam is off, or None."""
     for cond in bmap.beam_on:
         x = values.get(cond.pv)
@@ -53,7 +53,7 @@ def _beam_off(bmap, values, sim):
 def compute_status(bmap, values, sim=False):
     """Return a dict of node name to NodeStatus."""
     own = {name: _blocked(node, values, sim) for name, node in bmap.nodes.items()}
-    beam_off = _beam_off(bmap, values, sim)
+    beam_off = beam_off_reason(bmap, values, sim)
     status = {}
     for name in bmap.nodes:
         # The reason is the closest blocker on the path, this node included,
