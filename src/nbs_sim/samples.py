@@ -3,11 +3,20 @@
 A sample map is a sample CSV in the format nbs-bl's ``Standard4SidedBar``
 reads (``sample_id, sample_name, side, x1, y1, x2, y2, thickness, ...``) with
 an extra ``spectrum`` column naming a two-column ``energy,yield`` CSV, relative
-to the sample file, and an optional ``signal_scale`` column (default 1) that
-multiplies the sample's yield. It is the sim's ground truth: positions may
+to the sample file, and optional columns:
+
+- ``signal_scale`` (default 1) multiplies the sample's yield.
+- ``noise`` (default 1) multiplies the relative counting noise of the
+  sample's signal without changing its mean, so a noisy sample looks normal
+  in intensity but needs repeat scans to average down.
+- ``charging`` (default 0, off) scales an additive charging baseline (see
+  ``ChargingModel``). The baseline is in absolute yield units and is not
+  multiplied by ``signal_scale``, so it hurts weak samples most.
+ It is the sim's ground truth: positions may
 differ from the sample file the beamline loads, to model a misplaced sample.
 """
 
+import time
 from os.path import dirname, isabs, join
 
 import numpy as np
@@ -37,6 +46,93 @@ def gaussian_average(func, energy, fwhm):
     return float(np.dot(_WEIGHTS, func(energy + sigma * _NODES)))
 
 
+class ChargingModel:
+    """Charging baseline for samples with a ``charging`` strength.
+
+    A spot is a ``spot_size`` mm cell of the sample surface. Each spot keeps
+    its own exposure history, so the model is lazy: a spot's state is only
+    updated when it is in the beam.
+
+    The baseline (yield units, added to the sample's yield) is::
+
+        charging * (first_amplitude * exp(-dose / first_tau)
+                    + repeat_amplitude * exp(-t_on / repeat_tau))
+
+    ``dose`` is the spot's accumulated beam time (s). It recovers toward 0
+    with ``recover_tau`` while the spot is out of the beam, so the large
+    first-exposure transient only comes back after a long rest. ``t_on`` is
+    the time since the spot's current exposure began: it restarts whenever
+    the spot has been out of the beam for more than ``gap`` seconds, or the
+    energy drops by more than ``energy_reset`` eV (the start of a new scan
+    with the shutter left open), so each re-scan starts with a smaller
+    transient. Both decay with beam time, and
+    a scan runs low to high in energy, so in a spectrum the baseline looks
+    like a decay across the scan.
+
+    Parameters are seconds of beam time; amplitudes are in the units of the
+    sample spectra (a pre-edge yield of about 1).
+    """
+
+    def __init__(
+        self,
+        first_amplitude=2.0,
+        first_tau=120.0,
+        repeat_amplitude=0.5,
+        repeat_tau=40.0,
+        recover_tau=3600.0,
+        gap=10.0,
+        energy_reset=5.0,
+        spot_size=1.0,
+        clock=time.monotonic,
+    ):
+        self.first_amplitude = float(first_amplitude)
+        self.first_tau = float(first_tau)
+        self.repeat_amplitude = float(repeat_amplitude)
+        self.repeat_tau = float(repeat_tau)
+        self.recover_tau = float(recover_tau)
+        self.gap = float(gap)
+        self.energy_reset = float(energy_reset)
+        self.spot_size = float(spot_size)
+        self.clock = clock
+        self.spots = {}
+
+    def spot_key(self, sample_id, sx, sy):
+        return (sample_id, int(np.floor(sx / self.spot_size)), int(np.floor(sy / self.spot_size)))
+
+    def expose(self, key, beam_on=True, energy=None):
+        """Advance the spot ``key`` to now and return its unit baseline
+        (before the sample's ``charging`` strength)."""
+        now = self.clock()
+        state = self.spots.setdefault(
+            key, {"dose": 0.0, "t_on": 0.0, "last": None, "energy": None}
+        )
+        if beam_on:
+            if state["last"] is None:
+                pass
+            else:
+                elapsed = now - state["last"]
+                if elapsed > self.gap:
+                    # The spot was out of the beam: partial recovery, new exposure
+                    state["dose"] *= np.exp(-elapsed / self.recover_tau)
+                    state["t_on"] = 0.0
+                else:
+                    state["dose"] += elapsed
+                    state["t_on"] += elapsed
+            last_energy = state["energy"]
+            if (
+                energy is not None
+                and last_energy is not None
+                and last_energy - energy > self.energy_reset
+            ):
+                state["t_on"] = 0.0
+            state["last"] = now
+            if energy is not None:
+                state["energy"] = energy
+        return self.first_amplitude * np.exp(
+            -state["dose"] / self.first_tau
+        ) + self.repeat_amplitude * np.exp(-state["t_on"] / self.repeat_tau)
+
+
 class SampleMap:
     """Find which sample on a 4-sided bar is in the beam.
 
@@ -59,6 +155,9 @@ class SampleMap:
         appear early.
     misalignment : dict, optional
         Bar misalignment, as for ``devices.manipulator.bar_misalignment``.
+    charging : dict, optional
+        Parameters for ``ChargingModel``. Only samples with a nonzero
+        ``charging`` column use it.
     """
 
     def __init__(
@@ -69,8 +168,10 @@ class SampleMap:
         attachment_point=(0, 0, 464),
         depth_tolerance=0.2,
         misalignment=None,
+        charging=None,
     ):
         self.depth_tolerance = depth_tolerance
+        self.charging = ChargingModel(**(charging or {}))
         self.to_ideal = None
         if misalignment:
             from .devices.manipulator import bar_misalignment
@@ -101,10 +202,18 @@ class SampleMap:
                 "half_height": abs(y2 - y1) / 2.0,
                 "spline": UnivariateSpline(data[:, 0], data[:, 1], s=0, ext=3),
                 "signal_scale": float(sample.get("signal_scale", 1.0)),
+                "noise": float(sample.get("noise", 1.0)),
+                "charging": float(sample.get("charging", 0.0)),
             }
 
     def sample_at(self, x, y, z, r):
         """Return the id of the sample in the beam at motor position (x, y, z, r), or None."""
+        hit = self.locate(x, y, z, r)
+        return None if hit is None else hit[0]
+
+    def locate(self, x, y, z, r):
+        """Return (sample_id, sx, sy), the sample in the beam and the beam's
+        position on it (mm from its centre), or None."""
         xp, yp, zp = self.manip_frame.rotate_in_plane(
             (x, y, z), -np.radians(r), ax1=0, ax2=1
         )
@@ -121,8 +230,8 @@ class SampleMap:
                 and abs(sz) <= self.depth_tolerance
             ):
                 if best is None or abs(sz) < best[1]:
-                    best = (sample_id, abs(sz))
-        return None if best is None else best[0]
+                    best = (sample_id, abs(sz), sx, sy)
+        return None if best is None else (best[0], best[2], best[3])
 
     def spectrum(self, sample_id, energy, fwhm=0.0):
         """
@@ -133,3 +242,17 @@ class SampleMap:
         """
         s = self.samples[sample_id]
         return s["signal_scale"] * gaussian_average(s["spline"], energy, fwhm)
+
+    def noise(self, sample_id):
+        """Relative noise multiplier of ``sample_id`` (1 is normal)."""
+        return self.samples[sample_id]["noise"]
+
+    def charging_baseline(self, sample_id, sx, sy, beam_on=True, energy=None):
+        """Charging baseline (yield units) of the spot at (sx, sy) on
+        ``sample_id``, advancing the spot's exposure if ``beam_on``. 0 for
+        samples without charging."""
+        strength = self.samples[sample_id]["charging"]
+        if not strength:
+            return 0.0
+        key = self.charging.spot_key(sample_id, sx, sy)
+        return strength * self.charging.expose(key, beam_on, energy)

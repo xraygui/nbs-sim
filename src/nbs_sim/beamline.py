@@ -78,18 +78,34 @@ class Beamline(BeamlineModel, PVGroup):
             return self.primary_manipulator
         return getattr(self, "primary_sampleholder", None)
 
-    def sample_yield(self, energy, fwhm=None):
+    def sample_yield(self, energy, fwhm=None, beam_on=True):
         """Yield of the sample in the beam, or None if no sample map applies.
-        ``fwhm`` is the energy resolution, by default the slits'."""
+        ``fwhm`` is the energy resolution, by default the slits'. Includes
+        the sample's charging baseline; ``beam_on`` False reads it without
+        charging the spot further."""
         manip = self.sample_manipulator()
         if manip is None or getattr(manip, "sample_map", None) is None:
             return None
-        sample_id = manip.current_sample()
-        if sample_id is None:
+        hit = manip.locate_sample()
+        if hit is None:
             return None
+        sample_id, sx, sy = hit
         if fwhm is None:
             fwhm = self.energy_resolution(energy)
-        return manip.sample_map.spectrum(sample_id, energy, fwhm)
+        sample_map = manip.sample_map
+        return sample_map.spectrum(
+            sample_id, energy, fwhm
+        ) + sample_map.charging_baseline(sample_id, sx, sy, beam_on, energy)
+
+    def sample_noise(self):
+        """Relative noise multiplier of the sample in the beam (1 without one)."""
+        manip = self.sample_manipulator()
+        if manip is None or getattr(manip, "sample_map", None) is None:
+            return 1.0
+        sample_id = manip.current_sample()
+        if sample_id is None:
+            return 1.0
+        return manip.sample_map.noise(sample_id)
 
     def energy_resolution(self, energy):
         """Mono resolution (FWHM, eV) from the slits role, or 0 without one."""

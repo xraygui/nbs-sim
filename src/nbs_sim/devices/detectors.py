@@ -51,10 +51,17 @@ def make_intensity_class(pv_name="Intensity"):
             await instance.write(value=self._add_noise(value))
 
         def _add_noise(self, value):
+            # A sample's ``noise`` multiplies the relative noise: as if it
+            # gave noise**2 fewer counts per unit of signal
+            factor = self._noise_factor()
             if self.noise == "poisson":
-                scale = self.count_rate * self.period
+                scale = self.count_rate * self.period / factor**2
                 return np.random.poisson(max(value, 0) * scale) / scale
-            return np.random.normal(value, self.sigma)
+            return np.random.normal(value, self.sigma * factor)
+
+        def _noise_factor(self):
+            """Override to scale the noise, e.g. by the sample in the beam."""
+            return 1.0
 
         async def _read(self):
             """Override this method to define how intensity is calculated."""
@@ -81,7 +88,9 @@ class DetectorKindMixin:
             return flux
         elif self.kind == "sc":
             energy = beam.energy()
-            sample_yield = self.parent.sample_yield(energy, beam.bandwidth(energy))
+            sample_yield = self.parent.sample_yield(
+                energy, beam.bandwidth(energy), beam_on=flux > 0
+            )
             if sample_yield is not None:
                 return flux * sample_yield
             overlap = self.parent.distance_func(transmission=False)
@@ -98,6 +107,11 @@ class DetectorKindMixin:
 
     async def _read(self):
         return self.kind_signal()
+
+    def _noise_factor(self):
+        if self.kind == "sc" and hasattr(self.parent, "sample_noise"):
+            return self.parent.sample_noise()
+        return 1.0
 
 
 def make_detector_class(pv_name="Intensity"):

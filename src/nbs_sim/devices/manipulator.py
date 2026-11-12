@@ -103,10 +103,17 @@ class ManipulatorBase(PVGroup):
         )
 
     def __init__(
-        self, prefix, parent=None, sample_file=None, misalignment=None, **kwargs
+        self,
+        prefix,
+        parent=None,
+        sample_file=None,
+        misalignment=None,
+        charging=None,
+        **kwargs,
     ):
         super().__init__(prefix, parent=parent)
         self.sample_file = sample_file
+        self.charging = charging
         self.sample_map = None
         self.misalignment = misalignment
         if misalignment:
@@ -142,13 +149,22 @@ class ManipulatorBase(PVGroup):
         if not isabs(path):
             path = join(basedir, path)
         print(f"Loading sample map {path}")
-        self.sample_map = SampleMap(path, misalignment=self.misalignment)
+        self.sample_map = SampleMap(
+            path, misalignment=self.misalignment, charging=self.charging
+        )
 
     def current_sample(self):
         """Id of the sample in the beam, or None if there is no map or no sample."""
         if self.sample_map is None:
             return None
         return self.sample_map.sample_at(*self.motor_position())
+
+    def locate_sample(self):
+        """(sample_id, sx, sy) of the sample in the beam and the beam's
+        position on it, or None."""
+        if self.sample_map is None:
+            return None
+        return self.sample_map.locate(*self.motor_position())
 
 
 class Manipulator(ManipulatorBase):
