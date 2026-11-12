@@ -66,6 +66,39 @@ nbs-sim \
 If neither `--startup-dir` nor both config file options are provided, startup exits
 with a CLI error.
 
+### Sim classes from other packages
+
+A package can ship sim classes for its own devices and register them with
+entry points, instead of every pod listing them in sim_conf.toml
+`[loaders]`:
+
+```toml
+[project.entry-points."nbs_sim.loaders"]
+haxpes = "haxpes.sim:LOADERS"   # a dict {real class: sim class}, or a function returning one
+
+[project.entry-points."nbs_sim.devices"]
+peak-analyzer = "haxpes.sim.peak:PeakAnalyzerSim"   # a short name usable as _target
+```
+
+The installed packages' tables are merged in entry point name order, and
+sim_conf.toml `[loaders]` overrides them. Sim code registered this way should
+import only caproto, numpy and `nbs_sim.sdk`, never ophyd or bluesky.
+
+### Extra sim processes
+
+A device can run in its own process: give it `_process = "analyzer"` in
+sim_conf.toml `[devices]`, and run
+
+```bash
+nbs-sim --startup-dir /path/to/startup --process analyzer
+```
+
+beside the main `nbs-sim`, which runs every device without a `_process`.
+Devices in an extra process get their beam from the beam map IOC
+(`nbs_sim.sdk.BeamInput`, so give them a `_node`) and the sample from the
+manipulator's `Sim:SampleID` and `Sim:Overlap` PVs (`nbs_sim.sdk.SampleInput`).
+Without a beam map they see a fixed beam.
+
 ## How it works
 
 - `nbs_sim.beamline:main` parses CLI arguments and loads device configuration.
@@ -98,6 +131,8 @@ flake8 src
 
 - `src/nbs_sim/beamline.py`: CLI entrypoint and IOC assembly.
 - `src/nbs_sim/load.py`: device factory helper used by autoload.
+- `src/nbs_sim/plugins.py`: sim classes from other packages' entry points.
+- `src/nbs_sim/sdk.py`: beam and sample inputs for sim devices.
 - `src/nbs_sim/devices/`: simulation device implementations.
 
 ## Notes

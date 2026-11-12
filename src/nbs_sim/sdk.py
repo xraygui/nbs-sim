@@ -22,13 +22,21 @@ three methods:
 
 Devices that attenuate the beam serve their transmission (0 to 1) on a
 ``transmission`` PV, which a sim overlay of the beam map points at.
+
+The sample model is shared through a file, not Python objects: the sim
+manipulator serves ``{prefix}Sim:SampleID`` and ``{prefix}Sim:Overlap``, a
+device anywhere watches them with ``SampleInput``, and reads per-sample data
+from the sample file (the manipulator's ``sample_file``) with
+``SampleTable``.
 """
 
 import asyncio
 import bisect
+import csv
 import logging
 import math
 import time
+from os.path import dirname, isabs, join
 
 from caproto import ChannelType
 
@@ -196,16 +204,19 @@ class BeamInput:
         Uses the current flux when there is no history for the interval.
         """
         t1 = time.monotonic() if t1 is None else t1
-        if t1 <= t0 or not self._times or self._times[0] > t0:
+        # Copies, since a device may call this from a worker thread while
+        # _record runs on the event loop.
+        times, fluxes = list(self._times), list(self._fluxes)
+        if t1 <= t0 or not times or times[0] > t0 or len(times) != len(fluxes):
             return self.flux()
         total = 0.0
         # Flux holds each value until the next update.
-        i = bisect.bisect_right(self._times, t0) - 1
+        i = bisect.bisect_right(times, t0) - 1
         t = t0
         while t < t1:
-            nxt = self._times[i + 1] if i + 1 < len(self._times) else t1
+            nxt = times[i + 1] if i + 1 < len(times) else t1
             end = min(nxt, t1)
-            total += self._fluxes[i] * (end - t)
+            total += fluxes[i] * (end - t)
             t = end
             i += 1
         return total / (t1 - t0)
@@ -218,7 +229,8 @@ def beam_for(device):
     A device with a ``beam_node`` and a parent beamline that names a beam map
     gets a BeamInput at that node, falling back to the parent beamline. A
     device with only a parent gets a ParentBeam, and a device with neither a
-    FixedBeam.
+    FixedBeam. In an extra sim process (``nbs-sim --process``) the parent
+    holds only some devices, so FixedBeam is the fallback there.
     """
     beam = getattr(device, "_beam_source", None)
     if beam is not None:
@@ -226,7 +238,11 @@ def beam_for(device):
     parent = getattr(device, "parent", None)
     node = getattr(device, "beam_node", None)
     map_prefix = getattr(parent, "beam_map_prefix", None)
-    if parent is not None and hasattr(parent, "intensity_func"):
+    if (
+        parent is not None
+        and hasattr(parent, "intensity_func")
+        and getattr(parent, "computes_beam", True)
+    ):
         fallback = ParentBeam(parent)
     else:
         fallback = FixedBeam()
@@ -248,3 +264,71 @@ def start_beam(device):
         except RuntimeError:  # no running loop: use the fallback for now
             pass
     return beam
+
+
+class SampleInput:
+    """
+    The sample in the beam, from a sim manipulator's ``Sim:SampleID`` and
+    ``Sim:Overlap`` PVs under ``prefix``.
+
+    ``sample_id`` is None with no sample in the beam, and ``overlap`` (the
+    fraction of the beam on the sample bar) is None until it arrives. Call
+    ``start()`` from a coroutine, as for BeamInput.
+    """
+
+    def __init__(self, prefix):
+        self.prefix = prefix
+        self.sample_id = None
+        self.overlap = None
+        self._task = None
+
+    def start(self):
+        if self._task is None:
+            self._task = asyncio.get_running_loop().create_task(self._monitor())
+
+    async def _monitor(self):
+        sample_pv = f"{self.prefix}Sim:SampleID"
+        overlap_pv = f"{self.prefix}Sim:Overlap"
+        async for event, context, data in _context().monitor(sample_pv, overlap_pv):
+            if event == "connection":
+                if data != "connected":
+                    if context.name == sample_pv:
+                        self.sample_id = None
+                    else:
+                        self.overlap = None
+                continue
+            value = data.data[0] if len(data.data) else None
+            if context.pv.name == sample_pv:
+                if isinstance(value, bytes):
+                    value = value.decode()
+                self.sample_id = value or None
+            else:
+                self.overlap = None if value is None else float(value)
+
+
+class SampleTable:
+    """
+    Rows of a sample CSV (the sim manipulator's ``sample_file``) by
+    ``sample_id``, for devices that keep their own per-sample columns in it,
+    such as an ``xps`` column naming a line file.
+    """
+
+    def __init__(self, path):
+        self.path = path
+        with open(path, newline="") as f:
+            rows = csv.DictReader(f, skipinitialspace=True)
+            self.rows = {row["sample_id"]: row for row in rows}
+
+    def get(self, sample_id, column):
+        """The sample's value in ``column``, or None if missing or empty."""
+        row = self.rows.get(sample_id)
+        if row is None:
+            return None
+        return row.get(column) or None
+
+    def path_for(self, sample_id, column):
+        """A file named in ``column``, relative to the sample file."""
+        value = self.get(sample_id, column)
+        if value is None or isabs(value):
+            return value
+        return join(dirname(self.path), value)

@@ -215,7 +215,7 @@ own service with its own CLI, using the same SDK inputs.
 | `RBD9103` (ucal and rsoxs), `K2600B` | stays in nbs-sim |
 | GreatEyes (`greateyes.py`) | rsoxs `rsoxs.sim` |
 | PCO Edge (`pcoedge.py`) | vppem `vppem.sim` |
-| `beam_map` (the map IOC and its physics module) | its own package, `nbs-map-ioc`, split out right after Phase 1; real beamlines run it without nbs-sim (as beamline-onboarding.md already suggests) |
+| `beam_map` (the map IOC and its physics module) | its own package, `nbs-map-ioc` (Phase 1b, deferred); real beamlines run it without nbs-sim (as beamline-onboarding.md already suggests) |
 
 ## Phases
 
@@ -233,7 +233,7 @@ Done when the contract doc is merged.
 
 ### Phase 1: physics in the beam IOC
 
-Status: implemented on nbs-sim branch `sim-physics` (2026-11-09), uncommitted.
+Status: implemented on nbs-sim branch `sim-physics` (2026-11-09).
 Slits and other attenuators feed the overlay once they publish
 `transmission` in Phase 2.
 
@@ -277,11 +277,11 @@ with claude-pods, which gains a `startup/beam_map.sim.toml`. As built:
   the beam source. SRS570, RBD9103 and the MCA use it too instead of their
   own copies; their `ref` now gets the mono broadening like the generic
   detector's.
-- Not done yet: the sample model still comes from the parent `Beamline`
-  (`sample_yield`, `distance_func`, the `yspl`/`refspl` splines), so sc, ref
-  and i1 detectors need nbs-sim's process. Publishing `Sim:SampleID` and
-  `Sim:Overlap` for out-of-process devices waits for Phase 5, which needs
-  it. HAXPES is not checked.
+- Not done yet: sc, ref and i1 still take the sample model from the parent
+  `Beamline` (`sample_yield`, `distance_func`, the `yspl`/`refspl`
+  splines), so they need nbs-sim's main process. Phase 5 added
+  `Sim:SampleID` and `Sim:Overlap` for devices elsewhere. HAXPES is not
+  checked.
 
 The original task list:
 
@@ -301,6 +301,28 @@ and i0, sc and i1 give the same values as before, to within noise.
 
 ### Phase 3: plugin loading and processes
 
+Status: implemented (2026-11-09) on nbs-sim branch `sim-physics`, with the
+compose pattern in nbs-pods. As built:
+
+- `nbs_sim.plugins` reads both entry point groups. `nbs-sim` passes the
+  merged `nbs_sim.loaders` tables, with sim_conf.toml `[loaders]` on top,
+  to `generate_device_config`; `createIOCDevice` resolves `_target` through
+  `nbs_sim.devices` names before dotted paths. A table that fails to load
+  is logged and skipped.
+- `nbs-sim --process NAME` loads only the devices with `_process = NAME`;
+  plain `nbs-sim` loads those with none. An extra process does not serve
+  the beamline's `beam_available` PV, and since it holds only part of the
+  beamline, its devices fall back to a FixedBeam rather than a ParentBeam.
+- nbs-pods: a `sim-process` compose service (same sim image, `pixi run
+  sim-process`, process from `NBS_SIM_PROCESS`, default `analyzer`), and a
+  `SIM_EXTRAS` build arg on the sim image for pip-installing beamline
+  packages. A pod with more processes copies the service directory.
+- Checked with haxpes as the package outside nbs-sim (see Phase 5): its
+  entry point maps `PeakAnalyzerIOC` with no `[loaders]` line, and the
+  analyzer runs in `--process analyzer` reading the beam IOC.
+
+The original task list:
+
 - `nbs_sim.loaders` and `nbs_sim.devices` entry points, merged under
   sim_conf.toml `[loaders]`.
 - `_process` key and `nbs-sim --process`.
@@ -311,6 +333,9 @@ Done when a test package outside nbs-sim registers a sim class that loads in
 a second process and reads physics from the beam IOC.
 
 ### Phase 4: move beamline- and facility-specific devices out
+
+Status: deferred (2026-11-09). Phases 3 and 5 do not need it: the classes
+stay in nbs-sim and pods keep their `[loaders]` lines until it is done.
 
 - Move the classes per the table into `sst_base.sim`, `haxpes.sim`,
   `ucal.sim`, `rsoxs.sim` and `vppem.sim`, each with an entry point loader
@@ -324,6 +349,46 @@ a second process and reads physics from the beam IOC.
 Done when nbs-sim imports nothing SST- or beamline-specific outside the shims.
 
 ### Phase 5: the PEAK analyzer, as the first external device
+
+Status: implemented (2026-11-09) in peak-ioc, haxpes (branch
+`peak-ioc-device`) and nbs-sim (branch `sim-physics`). As built:
+
+- peak-ioc: `SimBackend(lines=..., beam=..., work_function=4.5)`. A `Line`
+  has a binding energy (core) or kinetic energy (Auger); widths add
+  natural width, 0.2% of pass energy and (core only) mono bandwidth in
+  quadrature, keeping the line's area. The beam needs `energy()`,
+  `bandwidth()`, `flux()` and optionally `mean_flux(t0, t1)`; a sweep takes
+  each channel's flux over its own slice of the acquisition. `load_lines`
+  reads `[[line]]` TOML. Defaults (Au 4f at a constant 2090 eV) keep
+  `peak-sim-ioc` working on its own.
+- nbs-sim: the manipulator serves `{prefix}Sim:SampleID` and
+  `{prefix}Sim:Overlap` (fraction of the beam on the bar). `nbs_sim.sdk`
+  has `SampleInput` to watch them and `SampleTable` to read per-sample
+  columns from the sample CSV.
+- haxpes: `haxpes.sim.peak.PeakAnalyzerSim` is peak-ioc's IOC on
+  `SimBackend`, with the beam from `start_beam` at its node, counts scaled
+  by overlap and the sample's `signal_scale`, and lines from the sample's
+  `xps` column (a line file) or `lines_file`. It adds `Sim:Flux`,
+  `Sim:PhotonEnergy` and `Sim:Sample` PVs for checking. `haxpes.sim`
+  registers it for `PeakAnalyzerIOC` and as `peak-analyzer`; a `sim` extra
+  lists nbs-sim and peak-ioc.
+- HAXPES (profile_collection_haxpes): `beam_map.sim.toml` feeds the map the
+  DCCT ring current, the DCM energy (bandwidth = 1.4e-4 x energy, Si(111))
+  and the DM1 and HAXPES slit transmissions. `devices_sim.toml` swaps
+  `peak_analyzer` to `PeakAnalyzerIOC` and loads it; sim_conf.toml starts
+  DM1 and the nanoBPM filter out of the beam and gives the analyzer the
+  manipulator's sample PVs. In that sim, with the slits opened (they start
+  closed) and the bar half in the beam: I0 per unit flux stayed at 600 and
+  counts per flux at 0.41-0.44 when the HAXPES slits halved the flux,
+  Au 4f7/2 sat within 0.2 eV of hv - 88.5 at 1820 and 1850 eV, and closing
+  S2 two seconds into a 4.8 s sweep emptied its last third.
+- Also checked on a scratch copy of claude-pods' startup, with the analyzer
+  in `_process = "analyzer"` and a sample with its own C 1s and C KLL lines.
+- Not done: the HAXPES sim environment (its pixi.toml) needs haxpes and
+  peak-ioc for the pods to run the analyzer, and peak-ioc has no remote
+  yet; a standalone `peak-sim-ioc` that reads the beam map.
+
+The original task list:
 
 - peak-ioc: give `SimBackend` a pluggable beam source (photon energy, flux
   averaged over the acquisition, bandwidth). Add a binding-energy line model:
@@ -375,6 +440,8 @@ Settled 2026-11-09.
    Phase 1 as first planned: it is deferred until the physics PVs settle.
    Changing the map file schema and the IOC together is easier in one repo;
    after that, production beamlines should not need nbs-sim.
+7. **Phases 3 and 5 before Phase 4.** The device moves are deferred; the
+   plugin and process machinery and the PEAK analyzer came first.
 
 ## Risks
 

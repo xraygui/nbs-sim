@@ -1,4 +1,4 @@
-from nbs_core.autoload import simpleResolver
+from .plugins import resolve
 from copy import deepcopy
 
 
@@ -26,7 +26,7 @@ def createIOCDevice(device_key, info, cls=None, parent=None, **kwargs):
     if cls is not None:
         device_info.pop("_target", None)
     elif device_info.get("_target", None) is not None:
-        cls = simpleResolver(device_info.pop("_target"))
+        cls = resolve(device_info.pop("_target"))
     else:
         raise KeyError("Could not find '_target' in {}".format(device_info))
 

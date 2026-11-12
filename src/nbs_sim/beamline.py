@@ -12,9 +12,10 @@ import numpy as np
 from os.path import join, dirname, exists
 from scipy.interpolate import UnivariateSpline
 from nbs_core.beamline import BeamlineModel
-from nbs_core.autoconf import generate_device_config
+from nbs_core.autoconf import generate_device_config, load_settings
 from nbs_core.autoload import loadFromConfig
 from .beam_map.mapfile import default_overlay, load_map
+from .plugins import loader_table
 from .samples import norm_erf
 
 try:
@@ -28,13 +29,21 @@ class Beamline(BeamlineModel, PVGroup):
     # IOC has a global beam condition. Write 0 to simulate a beam dump.
     beam_available = pvproperty(value=1, dtype=int, name="beam_available")
 
-    def __init__(self, *args, config, config_dir="", beam_map=None, **kwargs):
+    def __init__(
+        self, *args, config, config_dir="", beam_map=None, process=None, **kwargs
+    ):
         """
         ``beam_map`` is a BeamMap whose IOC serves physics PVs. Devices with
         a ``_node`` then read their beam from it (see ``nbs_sim.sdk``).
+
+        ``process`` names the extra sim process this is (``--process``), or
+        None for the main one. Only the main process holds the whole
+        beamline, so only it can compute the beam itself.
         """
         super().__init__(*args, devices={}, groups={}, roles={}, **kwargs)
         self.config_dir = config_dir
+        self.process = process
+        self.computes_beam = process is None
         self.beam_map = beam_map
         self.beam_map_prefix = beam_map.prefix if beam_map is not None else None
         self.load_detector_data()
@@ -156,6 +165,19 @@ class Beamline(BeamlineModel, PVGroup):
         pass
 
 
+def sim_loaders(config_file):
+    """Installed packages' loader tables, under sim_conf.toml [loaders]."""
+    table = loader_table()
+    table.update(load_settings(config_file, sim_mode=True).get("loaders", {}))
+    return table
+
+
+def select_process(config, process=None):
+    """The devices that run in ``process`` (``_process`` in the config), or
+    with ``process`` None, the devices that name no process."""
+    return {k: v for k, v in config.items() if v.get("_process") == process}
+
+
 def main(argv=None):
     parser, split_args = template_arg_parser(
         desc="Simulation IOC Generator", default_prefix="SIM:"
@@ -181,6 +203,11 @@ def main(argv=None):
         "--no-beam-map",
         action="store_true",
         help="Compute the beam in this process even if there is a beam map",
+    )
+    parser.add_argument(
+        "--process",
+        help="Run only the devices with this _process, as an extra sim "
+        "process; by default run the devices that name no process",
     )
     parser.add_argument(
         "--config-file",
@@ -212,12 +239,28 @@ def main(argv=None):
         print(f"Reading the beam from the beam map IOC for {map_file}")
         beam_map = load_map(map_file)
 
-    config = generate_device_config(device_file, config_file, sim_mode=True)
-    ioc = Beamline(
-        config=config, config_dir=dirname(config_file), beam_map=beam_map, **ioc_options
+    config = generate_device_config(
+        device_file,
+        config_file,
+        translation_dict=sim_loaders(config_file),
+        sim_mode=True,
     )
+    config = select_process(config, args.process)
+    if args.process:
+        print(f"Sim process {args.process}: {', '.join(config) or 'no devices'}")
+    ioc = Beamline(
+        config=config,
+        config_dir=dirname(config_file),
+        beam_map=beam_map,
+        process=args.process,
+        **ioc_options,
+    )
+    pvdb = dict(ioc.pvdb)
+    if args.process:
+        # The main process serves the beamline's own PVs
+        pvdb.pop(ioc.beam_available.pvname)
 
-    run(ioc.pvdb, **run_options)
+    run(pvdb, **run_options)
 
 
 if __name__ == "__main__":

@@ -1,4 +1,5 @@
 from .motors import FakeMotor, FakeFMBOMotor
+from caproto import ChannelType
 from caproto.server import PVGroup, SubGroup, pvproperty
 from nbs_bl.geometry.frames import make_regular_polygon
 from nbs_bl.geometry.linalg import vec
@@ -66,6 +67,23 @@ class ManipulatorBase(PVGroup):
     @transmission.scan(period=0.2)
     async def transmission(self, instance, async_lib):
         await instance.write(value=float(norm_erf(self.distance_to_beam(), 1)))
+
+    # The sample model for devices in other processes (nbs_sim.sdk.SampleInput)
+    overlap = pvproperty(
+        value=0.0, dtype=float, read_only=True, name="Sim:Overlap",
+        doc="Fraction of the beam that hits the sample bar",
+    )
+    sample_id = pvproperty(
+        value="", dtype=ChannelType.STRING, read_only=True, name="Sim:SampleID",
+        doc="Id of the sample in the beam, or empty",
+    )
+
+    @overlap.scan(period=0.2)
+    async def overlap(self, instance, async_lib):
+        await instance.write(value=float(norm_erf(-self.distance_to_beam(), 1)))
+        sample = self.current_sample() or ""
+        if sample != self.sample_id.value:
+            await self.sample_id.write(sample)
 
     def distance_to_beam(self):
         mp = (
